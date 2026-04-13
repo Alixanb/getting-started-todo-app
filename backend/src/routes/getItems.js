@@ -1,6 +1,10 @@
-const db = require('../persistence');
+const itemService = require('../services/itemService');
 
 module.exports = async (req, res) => {
-    const items = await db.getItems();
-    res.send(items);
+    try {
+        const items = await itemService.getItems(req.user.id);
+        res.send(items);
+    } catch (err) {
+        res.status(500).send({ error: err.message });
+    }
 };

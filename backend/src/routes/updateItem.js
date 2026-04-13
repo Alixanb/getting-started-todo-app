@@ -1,10 +1,13 @@
-const db = require('../persistence');
+const itemService = require('../services/itemService');
 
 module.exports = async (req, res) => {
-    await db.updateItem(req.params.id, {
-        name: req.body.name,
-        completed: req.body.completed,
-    });
-    const item = await db.getItem(req.params.id);
-    res.send(item);
+    try {
+        const item = await itemService.updateItem(req.params.id, {
+            name: req.body.name,
+            completed: req.body.completed,
+        });
+        res.send(item);
+    } catch (err) {
+        res.status(err.status || 500).send({ error: err.message });
+    }
 };

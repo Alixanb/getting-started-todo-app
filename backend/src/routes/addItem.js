@@ -1,13 +1,10 @@
-const db = require('../persistence');
-const { v4: uuid } = require('uuid');
+const itemService = require('../services/itemService');
 
 module.exports = async (req, res) => {
-    const item = {
-        id: uuid(),
-        name: req.body.name,
-        completed: false,
-    };
-
-    await db.storeItem(item);
-    res.send(item);
+    try {
+        const item = await itemService.addItem(req.body.name, req.user.id);
+        res.status(201).send(item);
+    } catch (err) {
+        res.status(err.status || 500).send({ error: err.message });
+    }
 };
