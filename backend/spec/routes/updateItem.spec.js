@@ -1,33 +1,25 @@
-const db = require('../../src/persistence');
+const itemService = require('../../src/services/itemService');
 const updateItem = require('../../src/routes/updateItem');
-const ITEM = { id: 12345 };
 
-jest.mock('../../src/persistence', () => ({
-    getItem: jest.fn(),
+jest.mock('../../src/services/itemService', () => ({
     updateItem: jest.fn(),
 }));
 
 test('it updates items correctly', async () => {
+    const updatedItem = { id: 1234, name: 'New title', completed: false };
     const req = {
         params: { id: 1234 },
         body: { name: 'New title', completed: false },
     };
-    const res = { send: jest.fn() };
+    const res = { send: jest.fn(), status: jest.fn().mockReturnThis() };
 
-    db.getItem.mockReturnValue(Promise.resolve(ITEM));
+    itemService.updateItem.mockResolvedValue(updatedItem);
 
     await updateItem(req, res);
 
-    expect(db.updateItem.mock.calls.length).toBe(1);
-    expect(db.updateItem.mock.calls[0][0]).toBe(req.params.id);
-    expect(db.updateItem.mock.calls[0][1]).toEqual({
+    expect(itemService.updateItem).toHaveBeenCalledWith(req.params.id, {
         name: 'New title',
         completed: false,
     });
-
-    expect(db.getItem.mock.calls.length).toBe(1);
-    expect(db.getItem.mock.calls[0][0]).toBe(req.params.id);
-
-    expect(res.send.mock.calls[0].length).toBe(1);
-    expect(res.send.mock.calls[0][0]).toEqual(ITEM);
+    expect(res.send).toHaveBeenCalledWith(updatedItem);
 });

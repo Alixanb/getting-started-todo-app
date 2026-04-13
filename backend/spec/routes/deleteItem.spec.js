@@ -1,20 +1,18 @@
-const db = require('../../src/persistence');
+const itemService = require('../../src/services/itemService');
 const deleteItem = require('../../src/routes/deleteItem');
-const ITEM = { id: 12345 };
 
-jest.mock('../../src/persistence', () => ({
-    removeItem: jest.fn(),
-    getItem: jest.fn(),
+jest.mock('../../src/services/itemService', () => ({
+    deleteItem: jest.fn(),
 }));
 
 test('it removes item correctly', async () => {
     const req = { params: { id: 12345 } };
-    const res = { sendStatus: jest.fn() };
+    const res = { sendStatus: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+    itemService.deleteItem.mockResolvedValue();
 
     await deleteItem(req, res);
 
-    expect(db.removeItem.mock.calls.length).toBe(1);
-    expect(db.removeItem.mock.calls[0][0]).toBe(req.params.id);
-    expect(res.sendStatus.mock.calls[0].length).toBe(1);
-    expect(res.sendStatus.mock.calls[0][0]).toBe(200);
+    expect(itemService.deleteItem).toHaveBeenCalledWith(req.params.id);
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
 });

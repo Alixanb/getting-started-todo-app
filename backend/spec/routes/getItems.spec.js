@@ -1,19 +1,19 @@
-const db = require('../../src/persistence');
+const itemService = require('../../src/services/itemService');
 const getItems = require('../../src/routes/getItems');
-const ITEMS = [{ id: 12345 }];
 
-jest.mock('../../src/persistence', () => ({
+jest.mock('../../src/services/itemService', () => ({
     getItems: jest.fn(),
 }));
 
 test('it gets items correctly', async () => {
-    const req = {};
-    const res = { send: jest.fn() };
-    db.getItems.mockReturnValue(Promise.resolve(ITEMS));
+    const ITEMS = [{ id: 12345 }];
+    const req = { user: { id: 'user-1' } };
+    const res = { send: jest.fn(), status: jest.fn().mockReturnThis() };
+
+    itemService.getItems.mockResolvedValue(ITEMS);
 
     await getItems(req, res);
 
-    expect(db.getItems.mock.calls.length).toBe(1);
-    expect(res.send.mock.calls[0].length).toBe(1);
-    expect(res.send.mock.calls[0][0]).toEqual(ITEMS);
+    expect(itemService.getItems).toHaveBeenCalledWith('user-1');
+    expect(res.send).toHaveBeenCalledWith(ITEMS);
 });
