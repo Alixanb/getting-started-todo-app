@@ -1,43 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useTodoList } from '../hooks/useTodoList';
 import { AddItemForm } from './AddNewItemForm';
 import { ItemDisplay } from './ItemDisplay';
 
 export function TodoListCard() {
-    const [items, setItems] = useState(null);
+    const { items, error, onNewItem, onItemUpdate, onItemRemoval } =
+        useTodoList();
 
-    useEffect(() => {
-        fetch('/api/items')
-            .then((r) => r.json())
-            .then(setItems);
-    }, []);
-
-    const onNewItem = useCallback(
-        (newItem) => {
-            setItems([...items, newItem]);
-        },
-        [items],
-    );
-
-    const onItemUpdate = useCallback(
-        (item) => {
-            const index = items.findIndex((i) => i.id === item.id);
-            setItems([
-                ...items.slice(0, index),
-                item,
-                ...items.slice(index + 1),
-            ]);
-        },
-        [items],
-    );
-
-    const onItemRemoval = useCallback(
-        (item) => {
-            const index = items.findIndex((i) => i.id === item.id);
-            setItems([...items.slice(0, index), ...items.slice(index + 1)]);
-        },
-        [items],
-    );
-
+    if (error) return <p className="text-danger">Failed to load items.</p>;
     if (items === null) return 'Loading...';
 
     return (

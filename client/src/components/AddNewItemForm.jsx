@@ -3,28 +3,26 @@ import PropTypes from 'prop-types';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import InputGroup from 'react-bootstrap/InputGroup';
+import { createItem } from '../api/todoApi';
 
 export function AddItemForm({ onNewItem }) {
     const [newItem, setNewItem] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState(null);
 
-    const submitNewItem = (e) => {
+    const submitNewItem = async (e) => {
         e.preventDefault();
         setSubmitting(true);
-
-        const options = {
-            method: 'POST',
-            body: JSON.stringify({ name: newItem }),
-            headers: { 'Content-Type': 'application/json' },
-        };
-
-        fetch('/api/items', options)
-            .then((r) => r.json())
-            .then((item) => {
-                onNewItem(item);
-                setSubmitting(false);
-                setNewItem('');
-            });
+        setError(null);
+        try {
+            const item = await createItem(newItem);
+            onNewItem(item);
+            setNewItem('');
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -36,16 +34,17 @@ export function AddItemForm({ onNewItem }) {
                     type="text"
                     placeholder="New Item"
                     aria-label="New item"
+                    maxLength={255}
                 />
                 <Button
                     type="submit"
                     variant="success"
-                    disabled={!newItem.length}
-                    className={submitting ? 'disabled' : ''}
+                    disabled={!newItem.length || submitting}
                 >
                     {submitting ? 'Adding...' : 'Add Item'}
                 </Button>
             </InputGroup>
+            {error && <p className="text-danger small">{error}</p>}
         </Form>
     );
 }

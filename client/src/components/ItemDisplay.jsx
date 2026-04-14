@@ -7,26 +7,20 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTrash } from '@fortawesome/free-solid-svg-icons/faTrash';
 import faCheckSquare from '@fortawesome/fontawesome-free-regular/faCheckSquare';
 import faSquare from '@fortawesome/fontawesome-free-regular/faSquare';
+import { updateItem, deleteItem } from '../api/todoApi';
 import './ItemDisplay.scss';
 
 export function ItemDisplay({ item, onItemUpdate, onItemRemoval }) {
     const toggleCompletion = () => {
-        fetch(`/api/items/${item.id}`, {
-            method: 'PUT',
-            body: JSON.stringify({
-                name: item.name,
-                completed: !item.completed,
-            }),
-            headers: { 'Content-Type': 'application/json' },
-        })
-            .then((r) => r.json())
-            .then(onItemUpdate);
+        updateItem(item.id, { name: item.name, completed: !item.completed })
+            .then(onItemUpdate)
+            .catch(console.error);
     };
 
     const removeItem = () => {
-        fetch(`/api/items/${item.id}`, { method: 'DELETE' }).then(() =>
-            onItemRemoval(item),
-        );
+        deleteItem(item.id)
+            .then(() => onItemRemoval(item))
+            .catch(console.error);
     };
 
     return (
