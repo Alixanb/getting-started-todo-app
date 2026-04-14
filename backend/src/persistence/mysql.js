@@ -1,6 +1,7 @@
 const waitPort = require('wait-port');
 const fs = require('fs');
 const mysql = require('mysql2');
+const { runMigrations } = require('../migrations/runner');
 
 const {
     MYSQL_HOST: HOST,
@@ -15,18 +16,19 @@ const {
 
 let pool;
 
+function query(sql, params = []) {
+    return new Promise((acc, rej) => {
+        pool.query(sql, params, (err, rows) => (err ? rej(err) : acc(rows)));
+    });
+}
+
 async function init() {
     const host = HOST_FILE ? fs.readFileSync(HOST_FILE) : HOST;
     const user = USER_FILE ? fs.readFileSync(USER_FILE) : USER;
     const password = PASSWORD_FILE ? fs.readFileSync(PASSWORD_FILE) : PASSWORD;
     const database = DB_FILE ? fs.readFileSync(DB_FILE) : DB;
 
-    await waitPort({
-        host,
-        port: 3306,
-        timeout: 10000,
-        waitForDns: true,
-    });
+    await waitPort({ host, port: 3306, timeout: 10000, waitForDns: true });
 
     pool = mysql.createPool({
         connectionLimit: 5,
@@ -37,99 +39,118 @@ async function init() {
         charset: 'utf8mb4',
     });
 
-    return new Promise((acc, rej) => {
-        pool.query(
-            'CREATE TABLE IF NOT EXISTS todo_items (id varchar(36), name varchar(255), completed boolean) DEFAULT CHARSET utf8mb4',
-            (err) => {
-                if (err) return rej(err);
+    await query('SELECT 1');
+    console.log(`Connected to mysql db at host ${HOST}`);
 
-                console.log(`Connected to mysql db at host ${HOST}`);
-                acc();
-            },
-        );
-    });
+    await runMigrations(
+        (sql) => query(sql),
+        (sql) => query(sql),
+    );
 }
 
 async function teardown() {
     return new Promise((acc, rej) => {
-        pool.end((err) => {
-            if (err) rej(err);
-            else acc();
-        });
+        pool.end((err) => (err ? rej(err) : acc()));
     });
 }
 
-async function getItems() {
-    return new Promise((acc, rej) => {
-        pool.query('SELECT * FROM todo_items', (err, rows) => {
-            if (err) return rej(err);
-            acc(
-                rows.map((item) =>
-                    Object.assign({}, item, {
-                        completed: item.completed === 1,
-                    }),
-                ),
-            );
-        });
-    });
+// ─── Todo items ──────────────────────────────────────────────────────────────
+
+async function getItems(userId) {
+    const rows = await query(
+        'SELECT * FROM todo_items WHERE user_id = ?',
+        [userId],
+    );
+    return rows.map((item) =>
+        Object.assign({}, item, { completed: item.completed === 1 }),
+    );
 }
 
 async function getItem(id) {
-    return new Promise((acc, rej) => {
-        pool.query('SELECT * FROM todo_items WHERE id=?', [id], (err, rows) => {
-            if (err) return rej(err);
-            acc(
-                rows.map((item) =>
-                    Object.assign({}, item, {
-                        completed: item.completed === 1,
-                    }),
-                )[0],
-            );
-        });
-    });
+    const rows = await query('SELECT * FROM todo_items WHERE id = ?', [id]);
+    const row = rows[0];
+    if (!row) return undefined;
+    return Object.assign({}, row, { completed: row.completed === 1 });
 }
 
 async function storeItem(item) {
-    return new Promise((acc, rej) => {
-        pool.query(
-            'INSERT INTO todo_items (id, name, completed) VALUES (?, ?, ?)',
-            [item.id, item.name, item.completed ? 1 : 0],
-            (err) => {
-                if (err) return rej(err);
-                acc();
-            },
-        );
-    });
+    await query(
+        'INSERT INTO todo_items (id, name, completed, user_id) VALUES (?, ?, ?, ?)',
+        [item.id, item.name, item.completed ? 1 : 0, item.userId],
+    );
 }
 
 async function updateItem(id, item) {
-    return new Promise((acc, rej) => {
-        pool.query(
-            'UPDATE todo_items SET name=?, completed=? WHERE id=?',
-            [item.name, item.completed ? 1 : 0, id],
-            (err) => {
-                if (err) return rej(err);
-                acc();
-            },
-        );
-    });
+    await query(
+        'UPDATE todo_items SET name=?, completed=? WHERE id=?',
+        [item.name, item.completed ? 1 : 0, id],
+    );
+    return { id, name: item.name, completed: Boolean(item.completed) };
 }
 
 async function removeItem(id) {
-    return new Promise((acc, rej) => {
-        pool.query('DELETE FROM todo_items WHERE id = ?', [id], (err) => {
-            if (err) return rej(err);
-            acc();
-        });
-    });
+    await query('DELETE FROM todo_items WHERE id = ?', [id]);
+}
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+async function getUserByEmail(email) {
+    const rows = await query('SELECT * FROM users WHERE email = ?', [email]);
+    return rows[0];
+}
+
+async function getUserById(id) {
+    const rows = await query(
+        'SELECT id, email, first_name, last_name, created_at FROM users WHERE id = ?',
+        [id],
+    );
+    return rows[0];
+}
+
+async function createUser(user) {
+    await query(
+        'INSERT INTO users (id, email, first_name, last_name, password_hash) VALUES (?, ?, ?, ?, ?)',
+        [user.id, user.email, user.firstName, user.lastName, user.passwordHash],
+    );
+}
+
+async function updateUser(id, { email, firstName, lastName }) {
+    await query(
+        'UPDATE users SET email = ?, first_name = ?, last_name = ? WHERE id = ?',
+        [email, firstName, lastName, id],
+    );
+}
+
+async function updateUserPassword(id, passwordHash) {
+    await query('UPDATE users SET password_hash = ? WHERE id = ?', [
+        passwordHash,
+        id,
+    ]);
+}
+
+async function deleteUser(id) {
+    await query('DELETE FROM users WHERE id = ?', [id]);
+}
+
+async function deleteUserItems(userId) {
+    await query('DELETE FROM todo_items WHERE user_id = ?', [userId]);
 }
 
 module.exports = {
     init,
     teardown,
+    // items
     getItems,
     getItem,
     storeItem,
     updateItem,
     removeItem,
+    // users
+    getUserByEmail,
+    getUserById,
+    createUser,
+    updateUser,
+    updateUserPassword,
+    deleteUser,
+    deleteUserItems,
 };
