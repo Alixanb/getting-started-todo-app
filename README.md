@@ -5,6 +5,10 @@ the current Docker best practices, ranging from the Compose file, to the
 Dockerfile, to CI (using GitHub Actions), and running tests. It's intended to 
 be well-documented to ensure anyone can come in and easily learn.
 
+
+## Architecture Decision Records (ADR)
+See [docs/adr/](docs/adr/) (in french only)
+
 ## Application architecture
 
 ![image](https://github.com/docker/getting-started-todo-app/assets/313480/c128b8e4-366f-4b6f-ad73-08e6652b7c4d)
@@ -53,4 +57,33 @@ When you're done, simply remove the containers by running the following command:
 
 ```
 docker compose down
+```
+
+## Configuration
+
+All configuration is done through environment variables. Copy `.env.example` to `.env` and adjust the values as needed:
+
+```
+cp .env.example .env
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `JWT_SECRET` | `dev-secret-…` | **Required in production.** Secret key used to sign JWT tokens. Generate with `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
+| `JWT_EXPIRES_IN` | `7d` | JWT token lifetime (e.g. `1h`, `7d`, `30d`). |
+| `SQLITE_DB_LOCATION` | `/etc/todos/todo.db` | Path to the SQLite database file. Set to a writable path when running outside Docker (e.g. `./todo.db`). |
+| `MYSQL_HOST` | _(unset)_ | MySQL hostname. When set, the app uses MySQL instead of SQLite. |
+| `MYSQL_USER` | — | MySQL username. |
+| `MYSQL_PASSWORD` | — | MySQL password. |
+| `MYSQL_DB` | — | MySQL database name. |
+| `MYSQL_HOST_FILE` | — | Path to a file containing the MySQL host (Docker secrets). |
+| `MYSQL_USER_FILE` | — | Path to a file containing the MySQL user (Docker secrets). |
+| `MYSQL_PASSWORD_FILE` | — | Path to a file containing the MySQL password (Docker secrets). |
+| `MYSQL_DB_FILE` | — | Path to a file containing the MySQL database name (Docker secrets). |
+
+### Running with SQLite locally (without Docker)
+
+```bash
+cd backend
+SQLITE_DB_LOCATION=./todo.db npm run dev
 ```
