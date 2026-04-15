@@ -15,7 +15,7 @@ export function PrivacyPage() {
                     </p>
                     <ul className="small">
                         <li><strong>Adresse e-mail</strong> — utilisée comme identifiant unique</li>
-                        <li><strong>Prénom et nom</strong> — affichés dans l'interface</li>
+                        <li><strong>Prénom et nom</strong> — affichés dans l&apos;interface</li>
                         <li><strong>Mot de passe</strong> — stocké sous forme de hash bcrypt (jamais en clair)</li>
                         <li><strong>Date de création du compte</strong></li>
                     </ul>
@@ -24,7 +24,7 @@ export function PrivacyPage() {
 
             <Card className="mb-4">
                 <Card.Body>
-                    <h6>Données d'utilisation</h6>
+                    <h6>Données d&apos;utilisation</h6>
                     <p className="small text-muted mb-2">
                         Vos <strong>tâches (todos)</strong> sont stockées et associées à votre compte.
                         Chaque tâche contient :
@@ -41,10 +41,10 @@ export function PrivacyPage() {
                 <Card.Body>
                     <h6>Stockage et sécurité</h6>
                     <ul className="small">
-                        <li>Les données sont stockées localement dans la base de données de l'application (SQLite ou MySQL)</li>
-                        <li>Aucune donnée n'est partagée avec des tiers</li>
+                        <li>Les données sont stockées localement dans la base de données de l&apos;application (SQLite ou MySQL)</li>
+                        <li>Aucune donnée n&apos;est partagée avec des tiers</li>
                         <li>Aucun cookie de tracking ni analytics</li>
-                        <li>L'authentification utilise un token JWT stocké dans un cookie <code>httpOnly</code> (non accessible par JavaScript)</li>
+                        <li>L&apos;authentification utilise un token JWT stocké dans un cookie <code>httpOnly</code> (non accessible par JavaScript)</li>
                     </ul>
                 </Card.Body>
             </Card>
@@ -54,7 +54,7 @@ export function PrivacyPage() {
                     <h6>Vos droits</h6>
                     <ul className="small">
                         <li><strong>Accès et modification</strong> — depuis votre page profil</li>
-                        <li><strong>Suppression</strong> — depuis votre page profil → "Supprimer mon compte". Toutes vos données (compte et tâches) sont effacées immédiatement et définitivement</li>
+                        <li><strong>Suppression</strong> — depuis votre page profil → &ldquo;Supprimer mon compte&rdquo;. Toutes vos données (compte et tâches) sont effacées immédiatement et définitivement</li>
                     </ul>
                 </Card.Body>
             </Card>
