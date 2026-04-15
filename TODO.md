@@ -1,34 +1,6 @@
 # État du projet Todo App
 
----
-
-## Backlog original — statut de chaque tâche
-
-| Tâche | Statut | Détail |
-|---|---|---|
-| Écrire les tests unitaires backend | ✅ Fait | `spec/services/itemService.spec.js` (9 tests) + `spec/routes/*.spec.js` (5 fichiers, 14 tests au total) |
-| Écrire les tests d'intégration API | ✅ Fait | `backend/spec/integration/items.spec.js` — supertest, 10 tests GET/POST/PUT/DELETE. Skip automatique si sqlite3 natif absent (Node v24 hors Docker) ; s'exécutent en CI Docker. |
-| Ajouter des tests frontend (Vitest) | ✅ Fait | `todoApi.test.js` (8 tests), `useTodoList.test.js` (5 tests), `AddNewItemForm.test.jsx` (5 tests) — 18 tests Vitest au total |
-| Créer une couche service backend | ✅ Fait | `src/services/itemService.js` (items) + `src/services/userService.js` (utilisateurs) |
-| Ajouter validation des entrées (addItem) | ✅ Fait | `itemService.js` : vide, whitespace only, > 255 chars → 400 |
-| Corriger la transaction dans updateItem | ✅ Fait | `updateItem` retourne l'item directement en 1 appel SQL dans SQLite et MySQL (plus de double requête) |
-| Ajouter un système de migration DB | ✅ Fait | `backend/src/migrations/runner.js` + 3 fichiers SQL numérotés (`001_initial_schema`, `002_users_table`, `003_add_user_id_to_items`) |
-| Découper TodoListCard.jsx | ✅ Fait | État et appels API extraits dans `hooks/useTodoList.js` ; `TodoListCard` ne fait que rendre |
-| Découper ItemDisplay.jsx | ⚠️ Partiel | Logique API (`updateItem`, `deleteItem`) extraite vers `todoApi.js`. Pas de décomposition en sous-composants visuels. |
-| Rédiger les ADR | ✅ Fait | 4 ADR dans `docs/adr/` : service layer, dual DB, frontend api module, JWT httpOnly cookie |
-| Documenter SQLITE_DB_LOCATION dans README | ✅ Fait | Section `Configuration` dans `README.md` avec tableau de toutes les variables d'environnement |
-| Mettre en place GitHub Actions (CI) | ✅ Fait | `.github/workflows/ci.yml` — 3 jobs : test backend, test frontend + lint, build & push GHCR |
-| Optimiser le Dockerfile multi-stage | ✅ Déjà fait | 6 stages : `base → client-base → client-dev/build → backend-dev → test → final`. Aucune modification nécessaire. |
-| Publier l'image Docker sur un registry | ✅ Fait | Push vers GHCR (`ghcr.io`) dans le job `build-and-push` du CI. **Action manuelle requise** : `Settings > Actions > Workflow permissions` → "Read and write permissions" |
-| Lancer les tests dans la pipeline CI | ✅ Fait | Jobs `test-backend` (Jest) et `test-frontend` (Vitest + lint) bloquent le build si ils échouent |
-| Rédiger le plan de refonte | ✅ Fait | Réalisé via les sessions de travail ; `ANALYSE.md` documente l'architecture initiale |
-| Analyse architecture | ✅ Fait | `ANALYSE.md` — responsabilités, dépendances, zones à risque (pré-existait, base du plan de refonte) |
-| Configurer le Mono Repo | ⚠️ À préciser | La structure `backend/` + `client/` dans un même dépôt constitue déjà un monorepo. Si la tâche visait un outil dédié (Turborepo, Nx, etc.), c'est à définir. |
-| Préparer la soutenance projet initial | ❌ Non fait | Tâche non technique — à réaliser manuellement (slides, démo, etc.) |
-
----
-
-## Authentification & Sécurité ✅ (session 2)
+## Authentification & Sécurité ✅ 
 
 ### Backend — Nouveaux fichiers
 - **`src/services/userService.js`** : register, login, getProfile, updateProfile, changePassword, deleteAccount (bcrypt cost=12, JWT)
