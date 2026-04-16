@@ -2,6 +2,8 @@
 
 Application todo full-stack (React + Node.js/Express) avec authentification JWT, base de données SQLite/MySQL, migrations, tests unitaires et d'intégration, pipeline CI/CD GitHub Actions.
 
+KANBAN : https://trello.com/invite/b/69c52ebb45f3b11aa104ec81/ATTI737c63c3e399a68e722a938a44ec03829AE8616C/modele-kanban
+
 ## Table des matières
 
 - [Architecture](#architecture)
