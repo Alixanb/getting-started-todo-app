@@ -8,10 +8,8 @@ import Alert from 'react-bootstrap/Alert';
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
 import { register } from '../api/authApi';
-import { useAuth } from '../context/AuthContext';
 
 export function RegisterPage() {
-    const { loginUser } = useAuth();
     const navigate = useNavigate();
     const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', confirm: '' });
     const [error, setError] = useState(null);
@@ -32,9 +30,8 @@ export function RegisterPage() {
         }
         setLoading(true);
         try {
-            const user = await register(form.email, form.firstName, form.lastName, form.password);
-            loginUser(user);
-            navigate('/');
+            await register(form.email, form.firstName, form.lastName, form.password);
+            navigate('/login');
         } catch (err) {
             setError(err.message);
         } finally {
