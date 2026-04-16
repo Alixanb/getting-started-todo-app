@@ -55,6 +55,11 @@ function createApp() {
     app.put('/api/items/:id', authMiddleware, updateItem);
     app.delete('/api/items/:id', authMiddleware, deleteItem);
 
+    // SPA fallback — serve index.html for all non-API routes so React Router works on refresh
+    app.get('*', (req, res) => {
+        res.sendFile(__dirname + '/static/index.html');
+    });
+
     return app;
 }
 
