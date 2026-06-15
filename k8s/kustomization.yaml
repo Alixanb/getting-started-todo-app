@@ -1,0 +1,16 @@
+# Core application stack. Apply with:  kubectl apply -k k8s/
+# The observability stack lives in k8s/observability (apply separately).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - mysql-pvc.yaml
+  - mysql-deployment.yaml
+  - mysql-service.yaml
+  - app-deployment.yaml
+  - app-service.yaml
+  - ingress.yaml
+  - hpa.yaml

@@ -1,0 +1,23 @@
+# Observability stack (Prometheus, Loki, Promtail, Grafana).
+# Apply with:  kubectl apply -k k8s/observability/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - prometheus-rbac.yaml
+  - prometheus-configmap.yaml
+  - prometheus-deployment.yaml
+  - loki-deployment.yaml
+  - promtail.yaml
+  - grafana-deployment.yaml
+
+# The Grafana dashboard JSON is provisioned as a ConfigMap generated from file.
+configMapGenerator:
+  - name: grafana-dashboards
+    namespace: observability
+    files:
+      - dashboards/todo-app.json
+
+generatorOptions:
+  disableNameSuffixHash: true

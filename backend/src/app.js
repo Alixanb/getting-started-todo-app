@@ -2,8 +2,12 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const pinoHttp = require('pino-http');
 
 const authMiddleware = require('./middleware/auth');
+const db = require('./persistence');
+const logger = require('./logger');
+const { register: metricsRegister, metricsMiddleware } = require('./metrics');
 
 // Auth routes
 const register = require('./routes/auth/register');
@@ -33,9 +37,32 @@ function createApp() {
     const app = express();
 
     app.use(helmet());
+    app.use(pinoHttp({ logger }));
+    app.use(metricsMiddleware);
     app.use(express.json());
     app.use(cookieParser());
     app.use(express.static(__dirname + '/static'));
+
+    // ── Observability endpoints ─────────────────────────────────────────────────
+    // Liveness: process is up. No dependencies checked.
+    app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+    // Readiness: app can serve traffic (database reachable).
+    app.get('/ready', async (req, res) => {
+        try {
+            await db.ping();
+            res.json({ status: 'ready' });
+        } catch (err) {
+            req.log?.error({ err }, 'readiness check failed');
+            res.status(503).json({ status: 'not ready' });
+        }
+    });
+
+    // Prometheus scrape endpoint.
+    app.get('/metrics', async (req, res) => {
+        res.set('Content-Type', metricsRegister.contentType);
+        res.send(await metricsRegister.metrics());
+    });
 
     // ── Public routes ──────────────────────────────────────────────────────────
     app.get('/api/greeting', getGreeting);
@@ -55,8 +82,10 @@ function createApp() {
     app.put('/api/items/:id', authMiddleware, updateItem);
     app.delete('/api/items/:id', authMiddleware, deleteItem);
 
-    // SPA fallback — serve index.html for all non-API routes so React Router works on refresh
-    app.get('*', (req, res) => {
+    // SPA fallback — serve index.html for all non-API routes so React Router works on refresh.
+    // Express 5 uses path-to-regexp v8, where the bare '*' string is invalid; a RegExp
+    // catch-all is the supported way to match every remaining path (including '/').
+    app.get(/.*/, (req, res) => {
         res.sendFile(__dirname + '/static/index.html');
     });
 

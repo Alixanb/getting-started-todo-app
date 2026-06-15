@@ -1,14 +1,15 @@
 const { createApp } = require('./app');
 const db = require('./persistence');
+const logger = require('./logger');
 
 const app = createApp();
 
 db.init()
     .then(() => {
-        app.listen(3000, () => console.log('Listening on port 3000'));
+        app.listen(3000, () => logger.info('Listening on port 3000'));
     })
     .catch((err) => {
-        console.error(err);
+        logger.error({ err }, 'failed to start');
         process.exit(1);
     });
 

@@ -1,6 +1,6 @@
 # Getting Started Todo App
 
-Application todo full-stack (React + Node.js/Express) avec authentification JWT, base de données SQLite/MySQL, migrations, tests unitaires et d'intégration, pipeline CI/CD GitHub Actions.
+Application todo full-stack (React + Node.js/Express) avec authentification JWT, base de données SQLite/MySQL, migrations, tests unitaires et d'intégration, pipeline CI/CD GitHub Actions, déploiement **Kubernetes** et **observabilité** (Prometheus / Grafana / Loki).
 
 KANBAN : https://trello.com/invite/b/69c52ebb45f3b11aa104ec81/ATTI737c63c3e399a68e722a938a44ec03829AE8616C/modele-kanban
 
@@ -12,6 +12,8 @@ KANBAN : https://trello.com/invite/b/69c52ebb45f3b11aa104ec81/ATTI737c63c3e399a6
 - [Lancer sans Docker](#lancer-sans-docker)
 - [Tests](#tests)
 - [Configuration](#configuration)
+- [Observabilité](#observabilité)
+- [Kubernetes](#kubernetes)
 - [Structure du projet](#structure-du-projet)
 - [CI/CD](#cicd)
 - [Architecture Decision Records](#architecture-decision-records)
@@ -47,8 +49,11 @@ cp .env.example .env          # ajuster JWT_SECRET en production
 docker compose up --watch
 ```
 
-- App : [http://localhost](http://localhost)
-- phpMyAdmin : [http://db.localhost](http://db.localhost)
+- App : [http://localhost:8080](http://localhost:8080) _(port configurable via `APP_PORT`)_
+- phpMyAdmin : [http://db.localhost:8080](http://db.localhost:8080)
+
+> Le port hôte de l'app est `8080` par défaut pour éviter les conflits si le port 80 est déjà
+> pris (autre Traefik, serveur web…). Pour utiliser le port 80 : `APP_PORT=80 docker compose up`.
 
 Les modifications du code backend et frontend sont répercutées automatiquement sans rebuild.
 
@@ -129,6 +134,9 @@ cd client
 npm run lint
 ```
 
+> Organisation complète des tests, couverture et seuils : [`docs/testing.md`](docs/testing.md).
+> La CI applique un **gate de couverture** (`npm run test:coverage`) côté back et front.
+
 ---
 
 ## Configuration
@@ -155,6 +163,36 @@ cp .env.example .env
 
 ---
 
+## Observabilité
+
+L'app expose `/health` (liveness), `/ready` (readiness, ping DB) et `/metrics` (Prometheus), et écrit des
+logs JSON structurés. Stack Prometheus + Grafana + Loki/Promtail fournie pour le dev local et pour Kubernetes.
+
+```bash
+cp .env.example .env
+docker compose -f compose.yaml -f compose.observability.yaml up --build
+# App        http://localhost:8080
+# Grafana    http://localhost:3001 (admin/admin) — dashboard « Todo App — Overview »
+# Prometheus http://localhost:9090
+```
+
+Détails et vérification : [`docs/observability.md`](docs/observability.md).
+
+---
+
+## Kubernetes
+
+Déploiement via une image bundlée unique, namespace `todo` :
+
+```bash
+kubectl apply -k k8s/                 # app + MySQL + ingress + HPA
+kubectl apply -k k8s/observability/   # Prometheus + Grafana + Loki + Promtail (optionnel)
+```
+
+Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs/kubernetes.md`](docs/kubernetes.md).
+
+---
+
 ## Structure du projet
 
 ```
@@ -167,10 +205,13 @@ cp .env.example .env
 │   │   ├── persistence/            # Couche d'accès données (SQLite / MySQL)
 │   │   ├── routes/                 # Routes REST (items + auth)
 │   │   └── services/               # Logique métier (itemService, userService)
+│   │   ├── metrics.js              # Registre Prometheus + middleware
+│   │   └── logger.js               # Logger structuré pino
 │   └── spec/
-│       ├── routes/                 # Tests unitaires des routes
+│       ├── routes/ (+ routes/auth) # Tests unitaires des routes
+│       ├── middleware/             # Tests unitaires du middleware auth
 │       ├── services/               # Tests unitaires des services
-│       └── integration/            # Tests d'intégration supertest
+│       └── integration/            # Tests d'intégration supertest (items, auth, health)
 ├── client/
 │   └── src/
 │       ├── api/                    # Modules fetch (todoApi, authApi)
@@ -178,9 +219,13 @@ cp .env.example .env
 │       ├── context/AuthContext.jsx # Gestion de la session utilisateur
 │       ├── hooks/useTodoList.js    # Hook état + appels API todo
 │       └── pages/                  # Login, Register, Profile, Privacy
-├── docs/adr/                       # Architecture Decision Records
+├── k8s/                            # Manifests Kubernetes (app, MySQL, ingress, HPA)
+│   └── observability/             # Prometheus, Grafana, Loki, Promtail
+├── observability/                  # Configs stack observabilité (dev local)
+├── docs/                           # Guides (observability, kubernetes, testing) + adr/
 ├── .github/workflows/ci.yml        # Pipeline CI/CD GitHub Actions
 ├── compose.yaml                    # Docker Compose (dev + prod)
+├── compose.observability.yaml      # Overlay observabilité
 └── .env.example                    # Template de configuration
 ```
 
@@ -190,8 +235,8 @@ cp .env.example .env
 
 Le pipeline GitHub Actions (`.github/workflows/ci.yml`) comporte 3 jobs exécutés à chaque push/PR :
 
-1. **test-backend** — `npm test` (Jest, unitaires + intégration dans Docker)
-2. **test-frontend** — `npm test` + `npm run lint` (Vitest + ESLint)
+1. **test-backend** — `npm run test:coverage` (Jest, unitaires + intégration, gate de couverture)
+2. **test-frontend** — `npm run lint` + `npm run test:coverage` (Vitest + ESLint, gate de couverture)
 3. **build-and-push** — build Docker multi-stage et push vers `ghcr.io` _(déclenché uniquement si les deux jobs de tests passent)_
 
 > **Action manuelle requise pour activer le push Docker :**
@@ -209,3 +254,7 @@ Les décisions d'architecture sont documentées dans [`docs/adr/`](docs/adr/) :
 | [002](docs/adr/002-sqlite-mysql-dual.md) | Double persistance SQLite / MySQL |
 | [003](docs/adr/003-frontend-api-module.md) | Module API frontend séparé |
 | [004](docs/adr/004-jwt-httponly-cookie.md) | JWT dans cookie httpOnly |
+| [005](docs/adr/005-kubernetes-orchestration.md) | Orchestration Kubernetes (image bundlée) |
+| [006](docs/adr/006-observability-stack.md) | Stack Prometheus / Grafana / Loki |
+| [007](docs/adr/007-health-readiness-probes.md) | Probes `/health` & `/ready` |
+| [008](docs/adr/008-structured-logging.md) | Logs structurés pino |

@@ -41,7 +41,9 @@ services:
     image: traefik:v3.6
     command: --providers.docker
     ports:
-      - 80:80
+      # Port hôte configurable (défaut 8080) pour éviter les conflits si un autre
+      # service occupe déjà le port 80. L'app sera sur http://localhost:${APP_PORT:-8080}
+      - ${APP_PORT:-8080}:80
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 

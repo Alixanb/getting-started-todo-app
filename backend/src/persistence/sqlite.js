@@ -53,6 +53,12 @@ async function teardown() {
     });
 }
 
+// Lightweight connectivity check used by the readiness probe.
+async function ping() {
+    await get('SELECT 1');
+    return true;
+}
+
 // ─── Todo items ──────────────────────────────────────────────────────────────
 
 async function getItems(userId) {
@@ -135,6 +141,7 @@ async function deleteUserItems(userId) {
 module.exports = {
     init,
     teardown,
+    ping,
     // items
     getItems,
     getItem,
