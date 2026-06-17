@@ -3,18 +3,32 @@ kind: Ingress
 metadata:
   name: todo-ingress
   namespace: todo
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   ingressClassName: nginx
   rules:
     - host: todo.localhost
       http:
         paths:
+          # Most specific first. ingress-nginx matches the longest prefix, so
+          # /api/auth → auth, /api → backend, everything else → frontend.
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth
+                port:
+                  number: 3001
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: app
+                name: frontend
                 port:
                   number: 80

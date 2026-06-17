@@ -10,7 +10,11 @@ resources:
   - mysql-pvc.yaml
   - mysql-deployment.yaml
   - mysql-service.yaml
-  - app-deployment.yaml
-  - app-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - auth-deployment.yaml
+  - auth-service.yaml
   - ingress.yaml
   - hpa.yaml

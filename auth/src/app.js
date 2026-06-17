@@ -1,6 +1,7 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const pinoHttp = require('pino-http');
 
 const authMiddleware = require('./middleware/auth');
@@ -8,12 +9,22 @@ const db = require('./persistence');
 const logger = require('./logger');
 const { register: metricsRegister, metricsMiddleware } = require('./metrics');
 
-// Item routes
-const getGreeting = require('./routes/getGreeting');
-const getItems = require('./routes/getItems');
-const addItem = require('./routes/addItem');
-const updateItem = require('./routes/updateItem');
-const deleteItem = require('./routes/deleteItem');
+// Auth routes
+const register = require('./routes/auth/register');
+const login = require('./routes/auth/login');
+const logout = require('./routes/auth/logout');
+const me = require('./routes/auth/me');
+const updateMe = require('./routes/auth/updateMe');
+const changePassword = require('./routes/auth/changePassword');
+const deleteAccount = require('./routes/auth/deleteAccount');
+
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later' },
+});
 
 function createApp() {
     const app = express();
@@ -46,15 +57,15 @@ function createApp() {
     });
 
     // ── Public routes ──────────────────────────────────────────────────────────
-    app.get('/api/greeting', getGreeting);
+    app.post('/api/auth/register', authLimiter, register);
+    app.post('/api/auth/login', authLimiter, login);
+    app.post('/api/auth/logout', logout);
 
     // ── Protected routes ───────────────────────────────────────────────────────
-    // JWT issued by the auth service is verified locally with the shared
-    // JWT_SECRET — no network call to the auth service per request.
-    app.get('/api/items', authMiddleware, getItems);
-    app.post('/api/items', authMiddleware, addItem);
-    app.put('/api/items/:id', authMiddleware, updateItem);
-    app.delete('/api/items/:id', authMiddleware, deleteItem);
+    app.get('/api/auth/me', authMiddleware, me);
+    app.put('/api/auth/me', authMiddleware, updateMe);
+    app.put('/api/auth/me/password', authMiddleware, changePassword);
+    app.delete('/api/auth/me', authMiddleware, deleteAccount);
 
     return app;
 }

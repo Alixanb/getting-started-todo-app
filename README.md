@@ -24,9 +24,27 @@ KANBAN : https://trello.com/invite/b/69c52ebb45f3b11aa104ec81/ATTI737c63c3e399a6
 
 ![image](https://github.com/docker/getting-started-todo-app/assets/313480/c128b8e4-366f-4b6f-ad73-08e6652b7c4d)
 
-Frontend React (Vite) → API REST Express → SQLite (dev) ou MySQL (prod).
+Architecture **3-tiers** : trois images Docker indépendantes, construites depuis leur propre
+contexte (`./client`, `./backend`, `./auth`), partageant une base MySQL.
 
-En production, le frontend est compilé en HTML/CSS/JS statiques et servi directement par le backend Express. En développement, Vite et nodemon tournent dans des conteneurs séparés avec hot-reload.
+| Service | Image | Rôle | Port |
+|---|---|---|---|
+| **frontend** | `…-frontend` (nginx) | SPA React/Vite compilée, servie en statique | 80 |
+| **backend** | `…-backend` (Node) | API todo-items, table `todo_items` | 3000 |
+| **auth** | `…-auth` (Node) | API authentification, table `users` | 3001 |
+
+Un reverse proxy (Traefik en compose, ingress-nginx en Kubernetes) place tout sur une seule
+origine et route selon la règle la plus spécifique :
+
+```
+/api/auth/*  → auth      (3001)
+/api/*       → backend   (3000)
+/*           → frontend  (80)
+```
+
+L'**auth** émet un JWT (cookie httpOnly) ; le **backend** le vérifie localement avec le
+`JWT_SECRET` partagé — aucun appel réseau entre services (stateless). En développement, Vite et
+nodemon tournent avec hot-reload via `docker compose --watch`.
 
 ---
 
@@ -67,7 +85,7 @@ docker compose down
 
 ## Lancer sans Docker
 
-### Backend
+### Backend (API items)
 
 ```bash
 cd backend
@@ -77,9 +95,21 @@ SQLITE_DB_LOCATION=./todo.db npm run dev
 
 Le backend écoute sur `http://localhost:3000`.
 
-### Frontend
+### Auth (API authentification)
 
 Dans un second terminal :
+
+```bash
+cd auth
+npm install
+SQLITE_DB_LOCATION=./auth.db npm run dev
+```
+
+Le service auth écoute sur `http://localhost:3001`.
+
+### Frontend
+
+Dans un troisième terminal :
 
 ```bash
 cd client
@@ -87,7 +117,10 @@ npm install
 npm run dev
 ```
 
-Le frontend Vite écoute sur `http://localhost:5173` et proxie `/api` vers le backend.
+Le frontend Vite écoute sur `http://localhost:5173`.
+
+> Hors Docker, le routage de proxy unique n'existe pas : préférez `docker compose up --watch`
+> pour avoir `/api/auth`, `/api` et `/` servis sur la même origine `http://localhost:8080`.
 
 ---
 
@@ -182,12 +215,15 @@ Détails et vérification : [`docs/observability.md`](docs/observability.md).
 
 ## Kubernetes
 
-Déploiement via une image bundlée unique, namespace `todo` :
+Déploiement des trois services (frontend, backend, auth) + MySQL, namespace `todo` :
 
 ```bash
-kubectl apply -k k8s/                 # app + MySQL + ingress + HPA
+kubectl apply -k k8s/                 # frontend + backend + auth + MySQL + ingress + HPA
 kubectl apply -k k8s/observability/   # Prometheus + Grafana + Loki + Promtail (optionnel)
 ```
+
+L'ingress route `/api/auth`→auth, `/api`→backend, `/`→frontend sur l'hôte `todo.localhost`.
+L'HPA cible le déploiement `backend`.
 
 Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs/kubernetes.md`](docs/kubernetes.md).
 
@@ -197,34 +233,38 @@ Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs
 
 ```
 .
-├── backend/
+├── backend/                        # Image backend — API todo-items
+│   ├── Dockerfile
 │   ├── src/
-│   │   ├── app.js                  # Point d'entrée Express (middlewares, routes)
-│   │   ├── middleware/auth.js      # Vérification JWT depuis cookie httpOnly
-│   │   ├── migrations/             # Scripts SQL numérotés + runner
-│   │   ├── persistence/            # Couche d'accès données (SQLite / MySQL)
-│   │   ├── routes/                 # Routes REST (items + auth)
-│   │   └── services/               # Logique métier (itemService, userService)
-│   │   ├── metrics.js              # Registre Prometheus + middleware
-│   │   └── logger.js               # Logger structuré pino
-│   └── spec/
-│       ├── routes/ (+ routes/auth) # Tests unitaires des routes
-│       ├── middleware/             # Tests unitaires du middleware auth
-│       ├── services/               # Tests unitaires des services
-│       └── integration/            # Tests d'intégration supertest (items, auth, health)
-├── client/
+│   │   ├── app.js                  # Express : observabilité + routes /api/items
+│   │   ├── middleware/auth.js      # Vérification JWT locale (secret partagé)
+│   │   ├── migrations/             # 001 todo_items, 003 add user_id + runner
+│   │   ├── persistence/            # Accès données items (SQLite / MySQL)
+│   │   ├── routes/                 # getGreeting, get/add/update/deleteItem
+│   │   ├── services/itemService.js # Logique métier items
+│   │   ├── metrics.js / logger.js  # Prometheus + logs pino
+│   └── spec/                       # Tests items + middleware + intégration
+├── auth/                           # Image auth — API authentification
+│   ├── Dockerfile
+│   ├── src/
+│   │   ├── app.js                  # Express : observabilité + routes /api/auth
+│   │   ├── middleware/auth.js      # Vérification JWT
+│   │   ├── migrations/002_users_table.sql + runner
+│   │   ├── persistence/            # Accès données users (SQLite / MySQL)
+│   │   ├── routes/auth/            # register, login, logout, me, …
+│   │   └── services/userService.js # Logique métier auth
+│   └── spec/                       # Tests auth + middleware + intégration
+├── client/                         # Image frontend — SPA React servie par nginx
+│   ├── Dockerfile / nginx.conf
 │   └── src/
 │       ├── api/                    # Modules fetch (todoApi, authApi)
-│       ├── components/             # Composants React
-│       ├── context/AuthContext.jsx # Gestion de la session utilisateur
-│       ├── hooks/useTodoList.js    # Hook état + appels API todo
-│       └── pages/                  # Login, Register, Profile, Privacy
-├── k8s/                            # Manifests Kubernetes (app, MySQL, ingress, HPA)
-│   └── observability/             # Prometheus, Grafana, Loki, Promtail
+│       ├── components/ context/ hooks/ pages/
+├── k8s/                            # Manifests K8s (frontend, backend, auth, MySQL, ingress, HPA)
+│   └── observability/              # Prometheus, Grafana, Loki, Promtail
 ├── observability/                  # Configs stack observabilité (dev local)
 ├── docs/                           # Guides (observability, kubernetes, testing) + adr/
 ├── .github/workflows/ci.yml        # Pipeline CI/CD GitHub Actions
-├── compose.yaml                    # Docker Compose (dev + prod)
+├── compose.yaml                    # Docker Compose (3 services + MySQL + proxy)
 ├── compose.observability.yaml      # Overlay observabilité
 └── .env.example                    # Template de configuration
 ```
@@ -233,11 +273,13 @@ Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs
 
 ## CI/CD
 
-Le pipeline GitHub Actions (`.github/workflows/ci.yml`) comporte 3 jobs exécutés à chaque push/PR :
+Le pipeline GitHub Actions (`.github/workflows/ci.yml`) exécute à chaque push/PR :
 
-1. **test-backend** — `npm run test:coverage` (Jest, unitaires + intégration, gate de couverture)
-2. **test-frontend** — `npm run lint` + `npm run test:coverage` (Vitest + ESLint, gate de couverture)
-3. **build-and-push** — build Docker multi-stage et push vers `ghcr.io` _(déclenché uniquement si les deux jobs de tests passent)_
+1. **test-backend** — `npm run test:coverage` (Jest, items, gate de couverture)
+2. **test-auth** — `npm run test:coverage` (Jest, auth, gate de couverture)
+3. **test-frontend** — `npm run lint` + `npm run test:coverage` (Vitest + ESLint, gate de couverture)
+4. **build-and-push** — matrice qui build et pousse les **3 images** vers `ghcr.io`
+   (`…-frontend`, `…-backend`, `…-auth`) _(uniquement sur `main`, si tous les tests passent)_
 
 > **Action manuelle requise pour activer le push Docker :**
 > `Settings > Actions > Workflow permissions` → cocher **"Read and write permissions"**

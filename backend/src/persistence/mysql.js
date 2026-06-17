@@ -98,66 +98,13 @@ async function removeItem(id) {
     await query('DELETE FROM todo_items WHERE id = ?', [id]);
 }
 
-// ─── Users ───────────────────────────────────────────────────────────────────
-
-async function getUserByEmail(email) {
-    const rows = await query('SELECT * FROM users WHERE email = ?', [email]);
-    return rows[0];
-}
-
-async function getUserById(id) {
-    const rows = await query(
-        'SELECT id, email, first_name, last_name, created_at FROM users WHERE id = ?',
-        [id],
-    );
-    return rows[0];
-}
-
-async function createUser(user) {
-    await query(
-        'INSERT INTO users (id, email, first_name, last_name, password_hash) VALUES (?, ?, ?, ?, ?)',
-        [user.id, user.email, user.firstName, user.lastName, user.passwordHash],
-    );
-}
-
-async function updateUser(id, { email, firstName, lastName }) {
-    await query(
-        'UPDATE users SET email = ?, first_name = ?, last_name = ? WHERE id = ?',
-        [email, firstName, lastName, id],
-    );
-}
-
-async function updateUserPassword(id, passwordHash) {
-    await query('UPDATE users SET password_hash = ? WHERE id = ?', [
-        passwordHash,
-        id,
-    ]);
-}
-
-async function deleteUser(id) {
-    await query('DELETE FROM users WHERE id = ?', [id]);
-}
-
-async function deleteUserItems(userId) {
-    await query('DELETE FROM todo_items WHERE user_id = ?', [userId]);
-}
-
 module.exports = {
     init,
     teardown,
     ping,
-    // items
     getItems,
     getItem,
     storeItem,
     updateItem,
     removeItem,
-    // users
-    getUserByEmail,
-    getUserById,
-    createUser,
-    updateUser,
-    updateUserPassword,
-    deleteUser,
-    deleteUserItems,
 };

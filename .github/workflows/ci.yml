@@ -8,7 +8,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
@@ -37,7 +36,32 @@ jobs:
         run: npm run test:coverage
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Job 2 — Frontend lint + tests
+  # Job 2 — Auth tests
+  # ────────────────────────────────────────────────────────────────────────────
+  test-auth:
+    name: Auth tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: auth/package-lock.json
+
+      - name: Install dependencies
+        working-directory: auth
+        run: npm ci
+
+      - name: Run tests with coverage
+        working-directory: auth
+        run: npm run test:coverage
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Job 3 — Frontend lint + tests
   # ────────────────────────────────────────────────────────────────────────────
   test-frontend:
     name: Frontend lint & tests
@@ -66,21 +90,31 @@ jobs:
         run: npm run test:coverage
 
   # ────────────────────────────────────────────────────────────────────────────
-  # Job 3 — Build Docker image & push to GHCR
-  # Requires both test jobs to succeed.
+  # Job 4 — Build the three Docker images & push to GHCR
+  # Requires all test jobs to succeed. One image per service.
   # Uses the built-in GITHUB_TOKEN — no extra secrets needed.
   # One-time setup: Settings > Actions > Workflow permissions → "Read and write"
   # ────────────────────────────────────────────────────────────────────────────
   build-and-push:
-    name: Build & push image
+    name: Build & push (${{ matrix.service }})
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend]
+    needs: [test-backend, test-auth, test-frontend]
     # Only push from the main branch (not from PRs)
     if: github.ref == 'refs/heads/main'
 
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      matrix:
+        include:
+          - service: frontend
+            context: ./client
+          - service: backend
+            context: ./backend
+          - service: auth
+            context: ./auth
 
     steps:
       - uses: actions/checkout@v4
@@ -96,7 +130,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/getting-started-todo-app-${{ matrix.service }}
           tags: |
             type=sha,prefix=
             type=raw,value=latest,enable={{is_default_branch}}
@@ -107,10 +141,9 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          target: final
+          context: ${{ matrix.context }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}

@@ -1,7 +1,9 @@
 # Déploiement Kubernetes
 
-L'application se déploie sur Kubernetes à partir d'une **image bundlée unique** (le backend Express sert
-le frontend compilé). Les manifests sont dans [`k8s/`](../k8s/), namespace `todo`.
+L'application se déploie sur Kubernetes à partir de **trois images** (`frontend` nginx,
+`backend` API items, `auth` API authentification) partageant une base MySQL. Les manifests sont
+dans [`k8s/`](../k8s/), namespace `todo`. L'`Ingress` route `/api/auth`→auth, `/api`→backend,
+`/`→frontend.
 
 ## Prérequis
 
@@ -21,14 +23,21 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main
 kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 ```
 
-## 1. Image
+## 1. Images
 
-La CI pousse l'image vers `ghcr.io/<owner>/getting-started-todo-app:latest`.
-Dans [`k8s/app-deployment.yaml`](../k8s/app-deployment.yaml), remplacer `OWNER` par votre
-organisation/utilisateur GitHub (en minuscules).
+La CI pousse les trois images vers `ghcr.io/<owner>/getting-started-todo-app-{frontend,backend,auth}:latest`.
+Les déploiements [`k8s/frontend-deployment.yaml`](../k8s/frontend-deployment.yaml),
+[`backend-deployment.yaml`](../k8s/backend-deployment.yaml) et
+[`auth-deployment.yaml`](../k8s/auth-deployment.yaml) référencent l'owner `alixanb` (à adapter,
+en minuscules).
 
-> En local sans registre : `docker build --target final -t ghcr.io/owner/getting-started-todo-app:latest .`
-> puis (Docker Desktop partage le démon avec le cluster) `imagePullPolicy: IfNotPresent`.
+> En local sans registre (Docker Desktop partage le démon avec le cluster, `imagePullPolicy: IfNotPresent`) :
+>
+> ```bash
+> docker build -t ghcr.io/owner/getting-started-todo-app-frontend:latest ./client
+> docker build -t ghcr.io/owner/getting-started-todo-app-backend:latest ./backend
+> docker build -t ghcr.io/owner/getting-started-todo-app-auth:latest ./auth
+> ```
 
 ## 2. Secrets
 
@@ -45,18 +54,21 @@ kubectl create secret generic todo-secret -n todo \
 
 ```bash
 kubectl apply -k k8s/
-kubectl rollout status deployment/app -n todo
+kubectl rollout status deployment/backend -n todo
+kubectl rollout status deployment/auth -n todo
+kubectl rollout status deployment/frontend -n todo
 kubectl get pods,svc,hpa,ingress -n todo
 ```
 
 Accès via l'`Ingress` (hôte `todo.localhost`) :
 
 ```bash
-curl http://todo.localhost/health      # {"status":"ok"}
+curl http://todo.localhost/                 # SPA (index.html)
+curl http://todo.localhost/api/greeting     # backend  → {"greeting":"Hello world!"}
 ```
 
 > Si l'hôte ne résout pas, ajoutez `127.0.0.1 todo.localhost` à `/etc/hosts`, ou utilisez un port-forward :
-> `kubectl port-forward -n todo svc/app 8080:80` puis `curl http://localhost:8080/health`.
+> `kubectl port-forward -n todo svc/frontend 8080:80` puis `curl http://localhost:8080/`.
 
 ## 4. Déployer l'observabilité (optionnel)
 
@@ -75,7 +87,9 @@ Chaque commande **bloque** son terminal : lance-en une par terminal (ou ajoute `
 
 | Service    | Commande                                                         | URL locale                          |
 | ---------- | ---------------------------------------------------------------- | ----------------------------------- |
-| App        | `kubectl port-forward -n todo svc/app 8081:80`                   | http://localhost:8081               |
+| Frontend   | `kubectl port-forward -n todo svc/frontend 8081:80`              | http://localhost:8081               |
+| Backend    | `kubectl port-forward -n todo svc/backend 3000:3000`            | http://localhost:3000/api/greeting  |
+| Auth       | `kubectl port-forward -n todo svc/auth 3001:3001`               | http://localhost:3001/health        |
 | Grafana    | `kubectl port-forward -n observability svc/grafana 3001:3000`    | http://localhost:3001 (admin/admin) |
 | Prometheus | `kubectl port-forward -n observability svc/prometheus 9091:9090` | http://localhost:9090               |
 | Loki       | `kubectl port-forward -n observability svc/loki 3101:3100`       | http://localhost:3100               |
@@ -96,10 +110,10 @@ Chaque commande **bloque** son terminal : lance-en une par terminal (ou ajoute `
 kubectl get hpa -n todo -w
 # Générer de la charge (dans un autre terminal) :
 kubectl run -n todo load --image=busybox --restart=Never -it --rm -- \
-  /bin/sh -c "while true; do wget -q -O- http://app/health; done"
+  /bin/sh -c "while true; do wget -q -O- http://backend:3000/health; done"
 ```
 
-Le nombre de réplicas de `app` doit monter (jusqu'à 5) quand le CPU dépasse 50 %.
+Le nombre de réplicas de `backend` doit monter (jusqu'à 5) quand le CPU dépasse 50 %.
 
 ## Contenu de `k8s/`
 
@@ -109,9 +123,11 @@ Le nombre de réplicas de `app` doit monter (jusqu'à 5) quand le CPU dépasse 5
 | `configmap.yaml` / `secret.yaml`               | config non sensible / secrets             |
 | `mysql-pvc.yaml`                               | volume persistant MySQL                   |
 | `mysql-deployment.yaml` / `mysql-service.yaml` | base de données                           |
-| `app-deployment.yaml` / `app-service.yaml`     | application (probes `/health` & `/ready`) |
-| `ingress.yaml`                                 | exposition HTTP (`todo.localhost`)        |
-| `hpa.yaml`                                     | autoscaling CPU 1→5                       |
+| `frontend-deployment.yaml` / `frontend-service.yaml` | SPA React servie par nginx          |
+| `backend-deployment.yaml` / `backend-service.yaml`   | API items (probes `/health` & `/ready`) |
+| `auth-deployment.yaml` / `auth-service.yaml`         | API auth (probes `/health` & `/ready`)  |
+| `ingress.yaml`                                 | routage `/api/auth`, `/api`, `/`          |
+| `hpa.yaml`                                     | autoscaling CPU du backend 1→5            |
 | `kustomization.yaml`                           | agrège le tout (`kubectl apply -k`)       |
 | `observability/`                               | Prometheus, Loki, Promtail, Grafana       |
 

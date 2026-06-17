@@ -1,41 +1,25 @@
 ###################################################
-# This Compose file provides the development environment for the todo app.
-# 
-# Seeing the final version of the application bundles the frontend with the
-# backend, we are able to "simulate" that by using a proxy to route requests
-# to the appropriate service. All requests to /api will be routed to the 
-# backend while all other requests will be sent to the client service. While
-# there is some overlap in the routing rules, the proxy determines the service
-# based on the most specific rule.
+# Development environment for the todo app (3-tier architecture).
 #
-# To support easier debugging and troubleshooting, phpMyAdmin is also included
-# to provide a web interface to the MySQL database.
+# Three application images are built from their own build context:
+#   - client  (./client)  → React SPA (Vite dev server here, nginx in prod)
+#   - backend (./backend) → todo-items API
+#   - auth    (./auth)    → authentication API
+#
+# A Traefik reverse proxy fronts them so everything is reachable on a single
+# origin (http://localhost:${APP_PORT}), which lets the browser send the auth
+# cookie to every service. Routing (most specific rule wins):
+#   /api/auth/*  → auth     (port 3001)
+#   /api/*       → backend  (port 3000)
+#   /*           → client   (port 5173)
+#
+# phpMyAdmin (db.localhost) is included for debugging the shared MySQL database.
 ###################################################
 
-###################################################
-# Services
-#
-# The services define the individual components of our application stack.
-# For each service, a separate container will be launched.
-###################################################
 services:
 
   ###################################################
-  # Service: proxy
-  #
-  # This service is a reverse proxy that will route requests to the appropriate
-  # service. Think of it like a HTTP router or a load balancer. It simply 
-  # forwards requests and allows us to simulate the final version of the 
-  # application where the frontend and backend are bundled together. We can 
-  # also use it to route requests to phpMyAdmin, which won't be accessible at 
-  # localhost, but at db.localhost.
-  #
-  # The image for this service comes directly from Docker Hub and is a Docker
-  # Official Image. Since Traefik can be configured in a variety of ways, we
-  # configure it here to watch the Docker events for new containers and to use
-  # their labels for configuration. That's why the Docker socket is mounted.
-  #
-  # We also expose port 80 to connect to the proxy from the host machine.
+  # Service: proxy — Traefik reverse proxy / router.
   ###################################################
   proxy:
     image: traefik:v3.6
@@ -48,34 +32,53 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   ###################################################
-  # Service: backend
-  # 
-  # This service is the Node.js server that provides the API for the app.
-  # When the container starts, it will use the image that results
-  # from building the Dockerfile, targeting the backend-dev stage.
+  # Service: auth — authentication API (/api/auth/*).
   #
-  # The Compose Watch configuration is used to automatically sync the code
-  # from the host machine to the container. This allows the server to be
-  # automatically reloaded when code changes are made.
-  #
-  # The environment variables configure the application to connect to the
-  # database, which is also configured in this Compose file. We obviously
-  # wouldn't hard-code these values in a production environment. But, in
-  # dev, these values are fine.
-  #
-  # Finally, the labels are used to configure Traefik (the reverse proxy) with
-  # the appropriate routing rules. In this case, all requests to localhost/api/*
-  # will be forwarded to this service's port 3000. 
+  # Owns the `users` table. Issues JWT cookies that the backend verifies
+  # locally with the shared JWT_SECRET (stateless, no cross-service call).
   ###################################################
-  backend:
+  auth:
     build:
-      context: ./
-      target: backend-dev
+      context: ./auth
+      target: dev
     environment:
       MYSQL_HOST: mysql
       MYSQL_USER: ${MYSQL_USER:-root}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-secret}
       MYSQL_DB: ${MYSQL_DB:-todos}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    develop:
+      watch:
+        - path: ./auth/src
+          action: sync
+          target: /usr/local/app/src
+        - path: ./auth/package.json
+          action: rebuild
+    labels:
+      # More specific than /api, so this router must win for /api/auth/*.
+      traefik.http.routers.auth.rule: Host(`localhost`) && PathPrefix(`/api/auth`)
+      traefik.http.routers.auth.priority: "20"
+      traefik.http.services.auth.loadbalancer.server.port: 3001
+
+  ###################################################
+  # Service: backend — todo-items API (/api/*).
+  #
+  # Owns the `todo_items` table. Verifies the auth JWT locally.
+  ###################################################
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-secret}
+      MYSQL_DB: ${MYSQL_DB:-todos}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
     depends_on:
       mysql:
         condition: service_healthy
@@ -88,27 +91,16 @@ services:
           action: rebuild
     labels:
       traefik.http.routers.backend.rule: Host(`localhost`) && PathPrefix(`/api`)
+      traefik.http.routers.backend.priority: "10"
       traefik.http.services.backend.loadbalancer.server.port: 3000
 
   ###################################################
-  # Service: client
-  #
-  # The client service is the React app that provides the frontend for the app.
-  # When the container starts, it will use the image that results from building
-  # the Dockerfile, targeting the dev stage.
-  #
-  # The Compose Watch configuration is used to automatically sync the code from
-  # the host machine to the container. This allows the client to be automatically
-  # reloaded when code changes are made.
-  # 
-  # The labels are used to configure Traefik (the reverse proxy) with the 
-  # appropriate routing rules. In this case, all requests to localhost will be
-  # forwarded to this service's port 5173.
+  # Service: client — React SPA (Vite dev server).
   ###################################################
   client:
     build:
-      context: ./
-      target: client-dev
+      context: ./client
+      target: dev
     develop:
       watch:
         - path: ./client/src
@@ -118,24 +110,11 @@ services:
           action: rebuild
     labels:
       traefik.http.routers.client.rule: Host(`localhost`)
+      traefik.http.routers.client.priority: "1"
       traefik.http.services.client.loadbalancer.server.port: 5173
 
-
   ###################################################
-  # Service: mysql
-  #
-  # The MySQL service is used to provide the database for the application.
-  # The image for this service comes directly from Docker Hub and is a Docker 
-  # Official Image.
-  
-  # The data is persisted in a volume named todo-mysql-data. Using a volume 
-  # allows us to take down the services without losing the data. When we start
-  # the services again, the data will still be there (assuming we didn't delete
-  # the volume, of course!).
-  #
-  # The environment variables configure the root password and the name of the
-  # database to create. Since these are used only for local development, it's
-  # ok to hard-code them here.
+  # Service: mysql — shared database for auth + backend.
   ###################################################
   mysql:
     image: mysql:9.3
@@ -151,19 +130,7 @@ services:
       retries: 5
 
   ###################################################
-  # Service: phpmyadmin
-  #
-  # This service provides a web interface to the MySQL database. It's useful
-  # for debugging and troubleshooting data, schemas, and more. The image for 
-  # this service comes directly from Docker Hub and is a Docker Official Image.
-  #
-  # The environment variables configure the connection to the database and 
-  # provide the default credentials, letting us immediately open the interface
-  # without needing to log in.
-  #
-  # The labels are used to configure Traefik (the reverse proxy) with the
-  # routing rules. In this case, all requests to db.localhost will be forwarded
-  # to this service's port 80.
+  # Service: phpmyadmin — web UI for the database (db.localhost).
   ###################################################
   phpmyadmin:
     image: phpmyadmin
@@ -176,11 +143,7 @@ services:
       traefik.http.services.phpmyadmin.loadbalancer.server.port: 80
 
 ###################################################
-# Volumes
-#
-# For this application stack, we only have one volume. It's used to persist the
-# data for the MySQL service. We are only going to use the default values,
-# hence the lack of any configuration for the volume.
+# Volumes — only MySQL needs persistence.
 ###################################################
 volumes:
   todo-mysql-data:

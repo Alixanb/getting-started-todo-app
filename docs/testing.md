@@ -59,3 +59,9 @@ npm run test:coverage  # tests + couverture
 1. **test-backend** — `npm run test:coverage` (Jest, unit + intégration, dans l'env Ubuntu où sqlite3 compile).
 2. **test-frontend** — `npm run lint` + `npm run test:coverage`.
 3. **build-and-push** — build de l'image `final` (qui relance la suite) et push vers GHCR, si 1 et 2 passent.
+
+## Tester le build en local avant l'envois ACR
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t todoappanb.azurecr.io/getting-started-todo-app .
+```
