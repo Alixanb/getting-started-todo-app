@@ -6,30 +6,43 @@
 #   - backend (./backend) → todo-items API
 #   - auth    (./auth)    → authentication API
 #
-# A Traefik reverse proxy fronts them so everything is reachable on a single
-# origin (http://localhost:${APP_PORT}), which lets the browser send the auth
-# cookie to every service. Routing (most specific rule wins):
+# A Kong API Gateway (DB-less) fronts them so everything is reachable on a
+# single origin (http://localhost:${APP_PORT}), which lets the browser send the
+# auth cookie to every service. Routing (gateway/kong.yml, most specific first):
 #   /api/auth/*  → auth     (port 3001)
 #   /api/*       → backend  (port 3000)
 #   /*           → client   (port 5173)
 #
-# phpMyAdmin (db.localhost) is included for debugging the shared MySQL database.
+# Per-service infra: auth/task each own a MySQL (database-per-service) and a
+# Redis cache; Kafka carries domain events (user.deleted). phpMyAdmin
+# (http://localhost:8081) debugs both databases.
 ###################################################
 
 services:
 
   ###################################################
-  # Service: proxy — Traefik reverse proxy / router.
+  # Service: kong — API Gateway (DB-less / déclaratif).
+  #
+  # Point d'entrée unique. Le routage (/api/auth → auth, /api → backend,
+  # / → client) et les plugins (cors, rate-limiting) sont définis dans
+  # gateway/kong.yml. L'app est sur http://localhost:${APP_PORT:-8080}.
   ###################################################
-  proxy:
-    image: traefik:v3.6
-    command: --providers.docker
-    ports:
-      # Port hôte configurable (défaut 8080) pour éviter les conflits si un autre
-      # service occupe déjà le port 80. L'app sera sur http://localhost:${APP_PORT:-8080}
-      - ${APP_PORT:-8080}:80
+  kong:
+    image: kong:3.7
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./gateway/kong.yml:/kong/kong.yml:ro
+    ports:
+      # Port hôte configurable (défaut 8080). Proxy Kong = port 8000.
+      - ${APP_PORT:-8080}:8000
+    depends_on:
+      - auth
+      - backend
+      - client
 
   ###################################################
   # Service: auth — authentication API (/api/auth/*).
@@ -42,15 +55,21 @@ services:
       context: ./auth
       target: dev
     environment:
-      MYSQL_HOST: mysql
+      MYSQL_HOST: auth-mysql
       MYSQL_USER: ${MYSQL_USER:-root}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-secret}
       MYSQL_DB: ${MYSQL_DB:-todos}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      REDIS_HOST: auth-redis
+      KAFKA_BROKERS: kafka:9092
     depends_on:
-      mysql:
+      auth-mysql:
         condition: service_healthy
+      auth-redis:
+        condition: service_started
+      kafka:
+        condition: service_started
     develop:
       watch:
         - path: ./auth/src
@@ -58,11 +77,6 @@ services:
           target: /usr/local/app/src
         - path: ./auth/package.json
           action: rebuild
-    labels:
-      # More specific than /api, so this router must win for /api/auth/*.
-      traefik.http.routers.auth.rule: Host(`localhost`) && PathPrefix(`/api/auth`)
-      traefik.http.routers.auth.priority: "20"
-      traefik.http.services.auth.loadbalancer.server.port: 3001
 
   ###################################################
   # Service: backend — todo-items API (/api/*).
@@ -74,14 +88,20 @@ services:
       context: ./backend
       target: dev
     environment:
-      MYSQL_HOST: mysql
+      MYSQL_HOST: task-mysql
       MYSQL_USER: ${MYSQL_USER:-root}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-secret}
       MYSQL_DB: ${MYSQL_DB:-todos}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      REDIS_HOST: task-redis
+      KAFKA_BROKERS: kafka:9092
     depends_on:
-      mysql:
+      task-mysql:
         condition: service_healthy
+      task-redis:
+        condition: service_started
+      kafka:
+        condition: service_started
     develop:
       watch:
         - path: ./backend/src
@@ -89,10 +109,6 @@ services:
           target: /usr/local/app/src
         - path: ./backend/package.json
           action: rebuild
-    labels:
-      traefik.http.routers.backend.rule: Host(`localhost`) && PathPrefix(`/api`)
-      traefik.http.routers.backend.priority: "10"
-      traefik.http.services.backend.loadbalancer.server.port: 3000
 
   ###################################################
   # Service: client — React SPA (Vite dev server).
@@ -108,18 +124,16 @@ services:
           target: /usr/local/app/src
         - path: ./client/package.json
           action: rebuild
-    labels:
-      traefik.http.routers.client.rule: Host(`localhost`)
-      traefik.http.routers.client.priority: "1"
-      traefik.http.services.client.loadbalancer.server.port: 5173
 
   ###################################################
-  # Service: mysql — shared database for auth + backend.
+  # Service: auth-mysql — database owned by the auth service (table users).
+  #
+  # Database-per-service : auth et task ont chacun leur propre instance MySQL.
   ###################################################
-  mysql:
+  auth-mysql:
     image: mysql:9.3
     volumes:
-      - todo-mysql-data:/var/lib/mysql
+      - auth-mysql-data:/var/lib/mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-secret}
       MYSQL_DATABASE: ${MYSQL_DB:-todos}
@@ -130,20 +144,78 @@ services:
       retries: 5
 
   ###################################################
-  # Service: phpmyadmin — web UI for the database (db.localhost).
+  # Service: task-mysql — database owned by the backend/task service (todo_items).
+  ###################################################
+  task-mysql:
+    image: mysql:9.3
+    volumes:
+      - task-mysql-data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-secret}
+      MYSQL_DATABASE: ${MYSQL_DB:-todos}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ###################################################
+  # Service: auth-redis — cache for the auth service (profil utilisateur).
+  ###################################################
+  auth-redis:
+    image: redis:7-alpine
+
+  ###################################################
+  # Service: task-redis — cache for the backend/task service (listes d'items).
+  ###################################################
+  task-redis:
+    image: redis:7-alpine
+
+  ###################################################
+  # Service: kafka — message bus (KRaft, mono-nœud, sans Zookeeper).
+  #
+  # auth publie les events (user.deleted) ; task les consomme pour purger les
+  # items du compte supprimé.
+  ###################################################
+  kafka:
+    image: apache/kafka:3.8.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  ###################################################
+  # Service: phpmyadmin — web UI for both databases (db.localhost).
+  #
+  # PMA_ARBITRARY + PMA_HOSTS : on choisit le serveur (auth-mysql / task-mysql)
+  # depuis l'écran de connexion.
   ###################################################
   phpmyadmin:
     image: phpmyadmin
     environment:
-      PMA_HOST: mysql
+      PMA_ARBITRARY: 1
+      PMA_HOSTS: auth-mysql,task-mysql
       PMA_USER: ${MYSQL_USER:-root}
       PMA_PASSWORD: ${MYSQL_PASSWORD:-secret}
-    labels:
-      traefik.http.routers.phpmyadmin.rule: Host(`db.localhost`)
-      traefik.http.services.phpmyadmin.loadbalancer.server.port: 80
+    # Exposé directement (Kong ne route que l'app). UI sur http://localhost:8081
+    ports:
+      - ${PMA_PORT:-8081}:80
 
 ###################################################
-# Volumes — only MySQL needs persistence.
+# Volumes — one persistent volume per database.
 ###################################################
 volumes:
-  todo-mysql-data:
+  auth-mysql-data:
+  task-mysql-data:
+  kafka-data:
