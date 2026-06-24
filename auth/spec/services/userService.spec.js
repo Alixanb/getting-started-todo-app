@@ -12,15 +12,16 @@ jest.mock('../../src/persistence', () => ({
     updateUser: jest.fn(),
     updateUserPassword: jest.fn(),
     deleteUser: jest.fn(),
-    deleteUserItems: jest.fn(),
 }));
 jest.mock('bcryptjs', () => ({
     hash: jest.fn(),
     compare: jest.fn(),
 }));
+jest.mock('../../src/bus', () => ({ publish: jest.fn() }));
 
 const db = require('../../src/persistence');
 const bcrypt = require('bcryptjs');
+const bus = require('../../src/bus');
 const userService = require('../../src/services/userService');
 
 beforeEach(() => jest.clearAllMocks());
@@ -190,11 +191,14 @@ describe('changePassword', () => {
 });
 
 describe('deleteAccount', () => {
-    test('removes the user items then the user', async () => {
-        db.deleteUserItems.mockResolvedValue();
+    test('removes the user and publishes a user.deleted event', async () => {
         db.deleteUser.mockResolvedValue();
         await userService.deleteAccount('u1');
-        expect(db.deleteUserItems).toHaveBeenCalledWith('u1');
         expect(db.deleteUser).toHaveBeenCalledWith('u1');
+        expect(bus.publish).toHaveBeenCalledWith(
+            'user-events',
+            'u1',
+            { type: 'user.deleted', userId: 'u1' },
+        );
     });
 });

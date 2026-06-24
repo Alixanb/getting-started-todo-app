@@ -24,27 +24,41 @@ KANBAN : https://trello.com/invite/b/69c52ebb45f3b11aa104ec81/ATTI737c63c3e399a6
 
 ![image](https://github.com/docker/getting-started-todo-app/assets/313480/c128b8e4-366f-4b6f-ad73-08e6652b7c4d)
 
-Architecture **3-tiers** : trois images Docker indépendantes, construites depuis leur propre
-contexte (`./client`, `./backend`, `./auth`), partageant une base MySQL.
+Architecture **microservices** : trois images applicatives (`./client`, `./backend`, `./auth`)
+derrière une **API Gateway**, avec une **base par service**, un **cache Redis par service** et un
+**bus d'événements Kafka**.
 
-| Service | Image | Rôle | Port |
+```
+                 ┌─────────────────────────── API Gateway (Kong) ───────────────────────────┐
+  Actor ──▶ Client ──▶  /api/auth ─▶ Auth  ──▶ auth-redis (cache) ──▶ auth-mysql (users)
+                        /api      ─▶ Task  ──▶ task-redis (cache) ──▶ task-mysql (todo_items)
+                        /         ─▶ Frontend (nginx)
+                                         Auth ──(user.deleted)──▶ Kafka ──▶ Task (purge items)
+  Actor ──▶ Monitoring (Prometheus / Grafana / Loki)
+```
+
+| Composant | Image | Rôle | Port |
 |---|---|---|---|
-| **frontend** | `…-frontend` (nginx) | SPA React/Vite compilée, servie en statique | 80 |
-| **backend** | `…-backend` (Node) | API todo-items, table `todo_items` | 3000 |
-| **auth** | `…-auth` (Node) | API authentification, table `users` | 3001 |
+| **Kong** | `kong:3.7` (DB-less) | API Gateway : routage + CORS + rate-limiting | 8000 |
+| **frontend** | `…-frontend` (nginx) | SPA React/Vite servie en statique | 80 |
+| **backend** (*task*) | `…-backend` (Node) | API todo-items | 3000 |
+| **auth** | `…-auth` (Node) | API authentification | 3001 |
+| **auth-mysql / task-mysql** | `mysql:9.3` | base par service (`users` / `todo_items`) | 3306 |
+| **auth-redis / task-redis** | `redis:7` | cache-aside par service | 6379 |
+| **kafka** | `apache/kafka:3.8` | bus d'événements (KRaft) | 9092 |
 
-Un reverse proxy (Traefik en compose, ingress-nginx en Kubernetes) place tout sur une seule
-origine et route selon la règle la plus spécifique :
+**Routage** (le plus spécifique gagne) : `/api/auth → auth`, `/api → backend`, `/ → frontend`.
 
-```
-/api/auth/*  → auth      (3001)
-/api/*       → backend   (3000)
-/*           → frontend  (80)
-```
+**Auth stateless** : l'auth émet un JWT (cookie httpOnly) ; le backend le vérifie localement
+avec le `JWT_SECRET` partagé — aucun appel réseau par requête.
 
-L'**auth** émet un JWT (cookie httpOnly) ; le **backend** le vérifie localement avec le
-`JWT_SECRET` partagé — aucun appel réseau entre services (stateless). En développement, Vite et
-nodemon tournent avec hot-reload via `docker compose --watch`.
+**Suppression de compte event-driven** : l'auth supprime l'utilisateur dans `auth-mysql` puis
+publie `user.deleted` sur Kafka ; le backend (task) consomme l'event et purge les `todo_items`
+de l'utilisateur dans `task-mysql`. Pas de transaction cross-base.
+
+**Dégradation gracieuse** : cache et bus s'activent par variable d'env (`REDIS_HOST`,
+`KAFKA_BROKERS`). Absents → no-op (lecture en base directe, pas d'event). Une panne Redis/Kafka
+ne casse pas les requêtes. En dev, Vite et nodemon ont le hot-reload via `docker compose --watch`.
 
 ---
 
@@ -67,13 +81,15 @@ cp .env.example .env          # ajuster JWT_SECRET en production
 docker compose up --watch
 ```
 
-- App : [http://localhost:8080](http://localhost:8080) _(port configurable via `APP_PORT`)_
-- phpMyAdmin : [http://db.localhost:8080](http://db.localhost:8080)
+- App (via Kong) : [http://localhost:8080](http://localhost:8080) _(port configurable via `APP_PORT`)_
+- phpMyAdmin : [http://localhost:8081](http://localhost:8081) _(choisir `auth-mysql` ou `task-mysql`)_
 
-> Le port hôte de l'app est `8080` par défaut pour éviter les conflits si le port 80 est déjà
-> pris (autre Traefik, serveur web…). Pour utiliser le port 80 : `APP_PORT=80 docker compose up`.
+> Le port hôte de l'app est `8080` par défaut (Kong). Pour utiliser le port 80 :
+> `APP_PORT=80 docker compose up`. phpMyAdmin est sur `8081` (`PMA_PORT`).
 
 Les modifications du code backend et frontend sont répercutées automatiquement sans rebuild.
+Au premier démarrage, Kafka met ~15-30 s à être prêt (le producer/consumer se reconnectent
+automatiquement).
 
 ### Arrêter
 
@@ -215,15 +231,15 @@ Détails et vérification : [`docs/observability.md`](docs/observability.md).
 
 ## Kubernetes
 
-Déploiement des trois services (frontend, backend, auth) + MySQL, namespace `todo` :
+Déploiement de toute la topologie (Kong + 3 services + 2 MySQL + 2 Redis + Kafka), namespace `todo` :
 
 ```bash
-kubectl apply -k k8s/                 # frontend + backend + auth + MySQL + ingress + HPA
+kubectl apply -k k8s/                 # gateway + services + bases + caches + kafka + ingress + HPA
 kubectl apply -k k8s/observability/   # Prometheus + Grafana + Loki + Promtail (optionnel)
 ```
 
-L'ingress route `/api/auth`→auth, `/api`→backend, `/`→frontend sur l'hôte `todo.localhost`.
-L'HPA cible le déploiement `backend`.
+L'`Ingress` (`todo.localhost`) forwarde vers **Kong**, qui route en interne `/api/auth`→auth,
+`/api`→backend, `/`→frontend. L'HPA cible le déploiement `backend`.
 
 Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs/kubernetes.md`](docs/kubernetes.md).
 
@@ -233,33 +249,34 @@ Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs
 
 ```
 .
-├── backend/                        # Image backend — API todo-items
+├── backend/                        # Image backend (task) — API todo-items
 │   ├── Dockerfile
 │   ├── src/
 │   │   ├── app.js                  # Express : observabilité + routes /api/items
 │   │   ├── middleware/auth.js      # Vérification JWT locale (secret partagé)
+│   │   ├── cache.js                # Cache-aside Redis (no-op si REDIS_HOST absent)
+│   │   ├── bus.js                  # Bus Kafka (no-op si KAFKA_BROKERS absent)
+│   │   ├── consumer.js             # Consumer user.deleted → purge des items
 │   │   ├── migrations/             # 001 todo_items, 003 add user_id + runner
 │   │   ├── persistence/            # Accès données items (SQLite / MySQL)
-│   │   ├── routes/                 # getGreeting, get/add/update/deleteItem
-│   │   ├── services/itemService.js # Logique métier items
-│   │   ├── metrics.js / logger.js  # Prometheus + logs pino
-│   └── spec/                       # Tests items + middleware + intégration
+│   │   ├── routes/ services/itemService.js  # routes + logique métier items
+│   │   ├── metrics.js / logger.js  # Prometheus (+ cache hits/misses) + logs pino
+│   └── spec/                       # Tests items + middleware + consumer + intégration
 ├── auth/                           # Image auth — API authentification
 │   ├── Dockerfile
 │   ├── src/
 │   │   ├── app.js                  # Express : observabilité + routes /api/auth
-│   │   ├── middleware/auth.js      # Vérification JWT
+│   │   ├── middleware/auth.js cache.js bus.js  # JWT + cache profil + producer event
 │   │   ├── migrations/002_users_table.sql + runner
 │   │   ├── persistence/            # Accès données users (SQLite / MySQL)
-│   │   ├── routes/auth/            # register, login, logout, me, …
-│   │   └── services/userService.js # Logique métier auth
+│   │   └── routes/auth/ services/userService.js
 │   └── spec/                       # Tests auth + middleware + intégration
 ├── client/                         # Image frontend — SPA React servie par nginx
 │   ├── Dockerfile / nginx.conf
-│   └── src/
-│       ├── api/                    # Modules fetch (todoApi, authApi)
-│       ├── components/ context/ hooks/ pages/
-├── k8s/                            # Manifests K8s (frontend, backend, auth, MySQL, ingress, HPA)
+│   └── src/ api/ components/ context/ hooks/ pages/
+├── gateway/kong.yml                # Config déclarative de l'API Gateway Kong (compose)
+├── k8s/                            # Manifests K8s : kong, frontend, backend, auth,
+│   │                               # auth/task-mysql, auth/task-redis, kafka, ingress, HPA
 │   └── observability/              # Prometheus, Grafana, Loki, Promtail
 ├── observability/                  # Configs stack observabilité (dev local)
 ├── docs/                           # Guides (observability, kubernetes, testing) + adr/
@@ -300,3 +317,7 @@ Les décisions d'architecture sont documentées dans [`docs/adr/`](docs/adr/) :
 | [006](docs/adr/006-observability-stack.md) | Stack Prometheus / Grafana / Loki |
 | [007](docs/adr/007-health-readiness-probes.md) | Probes `/health` & `/ready` |
 | [008](docs/adr/008-structured-logging.md) | Logs structurés pino |
+| [009](docs/adr/009-api-gateway-kong.md) | API Gateway Kong (DB-less) |
+| [010](docs/adr/010-cache-redis.md) | Cache-aside Redis par service |
+| [011](docs/adr/011-message-bus-kafka.md) | Bus d'événements Kafka |
+| [012](docs/adr/012-database-per-service.md) | Une base de données par service |

@@ -10,6 +10,7 @@ test('it updates items correctly', async () => {
     const req = {
         params: { id: 1234 },
         body: { name: 'New title', completed: false },
+        user: { id: 'user-1' },
     };
     const res = { send: jest.fn(), status: jest.fn().mockReturnThis() };
 
@@ -17,9 +18,10 @@ test('it updates items correctly', async () => {
 
     await updateItem(req, res);
 
-    expect(itemService.updateItem).toHaveBeenCalledWith(req.params.id, {
-        name: 'New title',
-        completed: false,
-    });
+    expect(itemService.updateItem).toHaveBeenCalledWith(
+        req.params.id,
+        { name: 'New title', completed: false },
+        'user-1',
+    );
     expect(res.send).toHaveBeenCalledWith(updatedItem);
 });

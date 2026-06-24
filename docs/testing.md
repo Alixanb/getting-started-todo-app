@@ -57,11 +57,22 @@ npm run test:coverage  # tests + couverture
 `.github/workflows/ci.yml` exécute, à chaque push/PR :
 
 1. **test-backend** — `npm run test:coverage` (Jest, unit + intégration, dans l'env Ubuntu où sqlite3 compile).
-2. **test-frontend** — `npm run lint` + `npm run test:coverage`.
-3. **build-and-push** — build de l'image `final` (qui relance la suite) et push vers GHCR, si 1 et 2 passent.
+2. **test-auth** — `npm run test:coverage` (Jest, service auth).
+3. **test-frontend** — `npm run lint` + `npm run test:coverage`.
+4. **build-and-push** — matrice qui build et pousse les **3 images** vers GHCR
+   (`…-frontend`, `…-backend`, `…-auth`), si les tests passent.
 
-## Tester le build en local avant l'envois ACR
+## Tester / pousser les images vers ACR (Azure)
+
+L'app est découpée en **3 images** (un contexte de build par service). Pour ACR :
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t todoappanb.azurecr.io/getting-started-todo-app .
+az acr login --name todoappanb
+for s in frontend:client backend:backend auth:auth; do
+  name=${s%%:*}; ctx=${s##*:}
+  docker buildx build --platform linux/amd64 \
+    -t todoappanb.azurecr.io/getting-started-todo-app-$name:latest ./$ctx --push
+done
 ```
+
+> Les images `backend`/`auth` relancent la suite de tests dans leur stage `test` pendant le build.

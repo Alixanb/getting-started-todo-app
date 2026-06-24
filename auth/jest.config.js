@@ -17,6 +17,9 @@ module.exports = {
         '!src/index.js',
         '!src/persistence/mysql.js',
         '!src/migrations/**',
+        // Infra wrappers exercised via compose/k8s, not unit tests (like mysql.js).
+        '!src/cache.js',
+        '!src/bus.js',
     ],
     coverageThreshold: {
         global: {
