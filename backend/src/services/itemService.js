@@ -1,8 +1,16 @@
 const { v4: uuid } = require('uuid');
 const db = require('../persistence');
+const cache = require('../cache');
+
+const itemsKey = (userId) => `items:${userId}`;
 
 async function getItems(userId) {
-    return db.getItems(userId);
+    const cached = await cache.get(itemsKey(userId));
+    if (cached) return cached;
+
+    const items = await db.getItems(userId);
+    await cache.set(itemsKey(userId), items);
+    return items;
 }
 
 async function addItem(name, userId) {
@@ -20,15 +28,19 @@ async function addItem(name, userId) {
 
     const item = { id: uuid(), name: trimmed, completed: false, userId };
     await db.storeItem(item);
+    await cache.del(itemsKey(userId));
     return item;
 }
 
-async function updateItem(id, { name, completed }) {
-    return db.updateItem(id, { name, completed });
+async function updateItem(id, { name, completed }, userId) {
+    const result = await db.updateItem(id, { name, completed });
+    await cache.del(itemsKey(userId));
+    return result;
 }
 
-async function deleteItem(id) {
-    return db.removeItem(id);
+async function deleteItem(id, userId) {
+    await db.removeItem(id);
+    await cache.del(itemsKey(userId));
 }
 
 module.exports = { getItems, addItem, updateItem, deleteItem };

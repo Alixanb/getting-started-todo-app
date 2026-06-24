@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mysql
+  name: task-mysql
   namespace: todo
   labels:
-    app: mysql
+    app: task-mysql
 spec:
   replicas: 1
   strategy:
     type: Recreate # a single PVC cannot be shared by a rolling pair
   selector:
     matchLabels:
-      app: mysql
+      app: task-mysql
   template:
     metadata:
       labels:
-        app: mysql
+        app: task-mysql
     spec:
       containers:
         - name: mysql
@@ -56,4 +56,4 @@ spec:
       volumes:
         - name: mysql-data
           persistentVolumeClaim:
-            claimName: mysql-pvc
+            claimName: task-mysql-pvc

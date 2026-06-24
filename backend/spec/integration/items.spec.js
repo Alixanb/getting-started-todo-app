@@ -7,6 +7,7 @@
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 
 // Temp DB and JWT secret for the test run
 const DB_PATH = path.join(os.tmpdir(), `todo-integration-${process.pid}.db`);
@@ -29,38 +30,18 @@ const describeIfSqlite = sqlite3Available ? describe : describe.skip;
 
 const app = sqlite3Available ? createApp() : null;
 
-// Test user credentials
-const TEST_USER = {
-    email: 'integration@test.com',
-    password: 'Test1234!',
-    firstName: 'Test',
-    lastName: 'User',
-};
-
-// Cookie jar shared across the whole suite
-let authCookie = '';
-let testUserId = null;
+// The auth service is a separate process now, so the backend test signs a JWT
+// directly with the shared secret — exactly the token the auth service would
+// issue. The backend's authMiddleware verifies it locally (stateless).
+const testUserId = 'integration-user-1';
+const authCookie = `token=${jwt.sign(
+    { id: testUserId, email: 'integration@test.com' },
+    process.env.JWT_SECRET,
+)}`;
 
 beforeAll(async () => {
     if (!sqlite3Available) return;
     await db.init();
-
-    // Register the test user
-    await request(app).post('/api/auth/register').send(TEST_USER);
-
-    // Log in and capture the JWT cookie
-    const loginRes = await request(app).post('/api/auth/login').send({
-        email: TEST_USER.email,
-        password: TEST_USER.password,
-    });
-
-    authCookie = loginRes.headers['set-cookie']?.[0] ?? '';
-
-    // Retrieve the user id so we can scope DB cleanup
-    const meRes = await request(app)
-        .get('/api/auth/me')
-        .set('Cookie', authCookie);
-    testUserId = meRes.body?.id ?? null;
 });
 
 afterAll(async () => {

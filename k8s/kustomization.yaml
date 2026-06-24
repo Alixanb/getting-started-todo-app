@@ -7,10 +7,31 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - secret.yaml
-  - mysql-pvc.yaml
-  - mysql-deployment.yaml
-  - mysql-service.yaml
-  - app-deployment.yaml
-  - app-service.yaml
+  # Databases (one per service)
+  - auth-mysql-pvc.yaml
+  - auth-mysql-deployment.yaml
+  - auth-mysql-service.yaml
+  - task-mysql-pvc.yaml
+  - task-mysql-deployment.yaml
+  - task-mysql-service.yaml
+  # Caches (one per service)
+  - auth-redis-deployment.yaml
+  - auth-redis-service.yaml
+  - task-redis-deployment.yaml
+  - task-redis-service.yaml
+  # Message bus
+  - kafka-deployment.yaml
+  - kafka-service.yaml
+  # Application services
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - auth-deployment.yaml
+  - auth-service.yaml
+  # API Gateway (Kong, DB-less) + edge ingress + autoscaler
+  - kong-configmap.yaml
+  - kong-deployment.yaml
+  - kong-service.yaml
   - ingress.yaml
   - hpa.yaml

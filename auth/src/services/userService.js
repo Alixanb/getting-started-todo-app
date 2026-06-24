@@ -2,9 +2,14 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 const db = require('../persistence');
+const cache = require('../cache');
+const bus = require('../bus');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+const USER_EVENTS_TOPIC = 'user-events';
+const profileKey = (userId) => `profile:${userId}`;
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
@@ -78,13 +83,23 @@ async function login(email, password) {
 }
 
 async function getProfile(userId) {
+    const cached = await cache.get(profileKey(userId));
+    if (cached) return cached;
+
     const user = await db.getUserById(userId);
     if (!user) {
         const err = new Error('User not found');
         err.status = 404;
         throw err;
     }
-    return { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name };
+    const profile = {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+    };
+    await cache.set(profileKey(userId), profile);
+    return profile;
 }
 
 async function updateProfile(userId, { email, firstName, lastName }) {
@@ -100,6 +115,7 @@ async function updateProfile(userId, { email, firstName, lastName }) {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
     });
+    await cache.del(profileKey(userId));
 
     return { id: userId, email: email.toLowerCase(), firstName: firstName.trim(), lastName: lastName.trim() };
 }
@@ -120,8 +136,12 @@ async function changePassword(userId, currentPassword, newPassword) {
 }
 
 async function deleteAccount(userId) {
-    await db.deleteUserItems(userId);
     await db.deleteUser(userId);
+    await cache.del(profileKey(userId));
+    // The task service owns the todo_items in its own database. Instead of a
+    // cross-database DELETE, we publish an event; the task service consumes it
+    // and purges the items itself.
+    await bus.publish(USER_EVENTS_TOPIC, userId, { type: 'user.deleted', userId });
 }
 
 module.exports = { register, login, getProfile, updateProfile, changePassword, deleteAccount };

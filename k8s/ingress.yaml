@@ -3,18 +3,19 @@ kind: Ingress
 metadata:
   name: todo-ingress
   namespace: todo
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   ingressClassName: nginx
   rules:
     - host: todo.localhost
       http:
         paths:
+          # The edge ingress forwards everything to the Kong API Gateway, which
+          # performs the internal routing (/api/auth → auth, /api → backend,
+          # / → frontend) and applies its plugins.
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: app
+                name: kong
                 port:
-                  number: 80
+                  number: 8000

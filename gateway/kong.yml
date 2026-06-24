@@ -1,0 +1,59 @@
+# Kong API Gateway — declarative (DB-less) config for docker compose.
+#
+# Single entry point (http://localhost:${APP_PORT}). Routing, most specific
+# path first (Kong prioritises the longest matching prefix):
+#   /api/auth/*  → auth     (3001)
+#   /api/*       → backend  (3000, "task")
+#   /*           → client   (5173, Vite dev server)
+#
+# strip_path: false → the upstream receives the full path (e.g. /api/items),
+# which is what the services route on.
+_format_version: "3.0"
+
+services:
+  - name: auth
+    url: http://auth:3001
+    routes:
+      - name: auth-route
+        paths:
+          - /api/auth
+        strip_path: false
+
+  - name: task
+    url: http://backend:3000
+    routes:
+      - name: task-route
+        paths:
+          - /api
+        strip_path: false
+
+  - name: frontend
+    url: http://client:5173
+    # preserve_host: the Vite dev server rejects requests whose Host is not
+    # localhost (returns 403). Forwarding the original Host (localhost:8080)
+    # keeps it happy. Harmless for the nginx prod image.
+    routes:
+      - name: frontend-route
+        paths:
+          - /
+        strip_path: false
+        preserve_host: true
+
+# Global plugins — applied to every service. Justify the "real gateway":
+# centralised CORS + coarse rate limiting at the edge.
+plugins:
+  - name: cors
+    config:
+      origins:
+        - "*"
+      credentials: true
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+  - name: rate-limiting
+    config:
+      minute: 1000
+      policy: local

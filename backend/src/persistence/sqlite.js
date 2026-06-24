@@ -96,44 +96,8 @@ async function removeItem(id) {
     await run('DELETE FROM todo_items WHERE id = ?', [id]);
 }
 
-// ─── Users ───────────────────────────────────────────────────────────────────
-
-async function getUserByEmail(email) {
-    return get('SELECT * FROM users WHERE email = ?', [email]);
-}
-
-async function getUserById(id) {
-    return get(
-        'SELECT id, email, first_name, last_name, created_at FROM users WHERE id = ?',
-        [id],
-    );
-}
-
-async function createUser(user) {
-    await run(
-        'INSERT INTO users (id, email, first_name, last_name, password_hash) VALUES (?, ?, ?, ?, ?)',
-        [user.id, user.email, user.firstName, user.lastName, user.passwordHash],
-    );
-}
-
-async function updateUser(id, { email, firstName, lastName }) {
-    await run(
-        'UPDATE users SET email = ?, first_name = ?, last_name = ? WHERE id = ?',
-        [email, firstName, lastName, id],
-    );
-}
-
-async function updateUserPassword(id, passwordHash) {
-    await run('UPDATE users SET password_hash = ? WHERE id = ?', [
-        passwordHash,
-        id,
-    ]);
-}
-
-async function deleteUser(id) {
-    await run('DELETE FROM users WHERE id = ?', [id]);
-}
-
+// Purge all items of a user — called by the Kafka consumer on `user.deleted`,
+// since the auth service no longer reaches this database directly.
 async function deleteUserItems(userId) {
     await run('DELETE FROM todo_items WHERE user_id = ?', [userId]);
 }
@@ -142,18 +106,10 @@ module.exports = {
     init,
     teardown,
     ping,
-    // items
     getItems,
     getItem,
     storeItem,
     updateItem,
     removeItem,
-    // users
-    getUserByEmail,
-    getUserById,
-    createUser,
-    updateUser,
-    updateUserPassword,
-    deleteUser,
     deleteUserItems,
 };

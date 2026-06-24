@@ -6,13 +6,13 @@ jest.mock('../../src/services/itemService', () => ({
 }));
 
 test('it removes item correctly', async () => {
-    const req = { params: { id: 12345 } };
+    const req = { params: { id: 12345 }, user: { id: 'user-1' } };
     const res = { sendStatus: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
 
     itemService.deleteItem.mockResolvedValue();
 
     await deleteItem(req, res);
 
-    expect(itemService.deleteItem).toHaveBeenCalledWith(req.params.id);
+    expect(itemService.deleteItem).toHaveBeenCalledWith(req.params.id, 'user-1');
     expect(res.sendStatus).toHaveBeenCalledWith(200);
 });

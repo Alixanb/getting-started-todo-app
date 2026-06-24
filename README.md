@@ -24,9 +24,41 @@ KANBAN : https://trello.com/invite/b/69c52ebb45f3b11aa104ec81/ATTI737c63c3e399a6
 
 ![image](https://github.com/docker/getting-started-todo-app/assets/313480/c128b8e4-366f-4b6f-ad73-08e6652b7c4d)
 
-Frontend React (Vite) → API REST Express → SQLite (dev) ou MySQL (prod).
+Architecture **microservices** : trois images applicatives (`./client`, `./backend`, `./auth`)
+derrière une **API Gateway**, avec une **base par service**, un **cache Redis par service** et un
+**bus d'événements Kafka**.
 
-En production, le frontend est compilé en HTML/CSS/JS statiques et servi directement par le backend Express. En développement, Vite et nodemon tournent dans des conteneurs séparés avec hot-reload.
+```
+                 ┌─────────────────────────── API Gateway (Kong) ───────────────────────────┐
+  Actor ──▶ Client ──▶  /api/auth ─▶ Auth  ──▶ auth-redis (cache) ──▶ auth-mysql (users)
+                        /api      ─▶ Task  ──▶ task-redis (cache) ──▶ task-mysql (todo_items)
+                        /         ─▶ Frontend (nginx)
+                                         Auth ──(user.deleted)──▶ Kafka ──▶ Task (purge items)
+  Actor ──▶ Monitoring (Prometheus / Grafana / Loki)
+```
+
+| Composant | Image | Rôle | Port |
+|---|---|---|---|
+| **Kong** | `kong:3.7` (DB-less) | API Gateway : routage + CORS + rate-limiting | 8000 |
+| **frontend** | `…-frontend` (nginx) | SPA React/Vite servie en statique | 80 |
+| **backend** (*task*) | `…-backend` (Node) | API todo-items | 3000 |
+| **auth** | `…-auth` (Node) | API authentification | 3001 |
+| **auth-mysql / task-mysql** | `mysql:9.3` | base par service (`users` / `todo_items`) | 3306 |
+| **auth-redis / task-redis** | `redis:7` | cache-aside par service | 6379 |
+| **kafka** | `apache/kafka:3.8` | bus d'événements (KRaft) | 9092 |
+
+**Routage** (le plus spécifique gagne) : `/api/auth → auth`, `/api → backend`, `/ → frontend`.
+
+**Auth stateless** : l'auth émet un JWT (cookie httpOnly) ; le backend le vérifie localement
+avec le `JWT_SECRET` partagé — aucun appel réseau par requête.
+
+**Suppression de compte event-driven** : l'auth supprime l'utilisateur dans `auth-mysql` puis
+publie `user.deleted` sur Kafka ; le backend (task) consomme l'event et purge les `todo_items`
+de l'utilisateur dans `task-mysql`. Pas de transaction cross-base.
+
+**Dégradation gracieuse** : cache et bus s'activent par variable d'env (`REDIS_HOST`,
+`KAFKA_BROKERS`). Absents → no-op (lecture en base directe, pas d'event). Une panne Redis/Kafka
+ne casse pas les requêtes. En dev, Vite et nodemon ont le hot-reload via `docker compose --watch`.
 
 ---
 
@@ -49,13 +81,15 @@ cp .env.example .env          # ajuster JWT_SECRET en production
 docker compose up --watch
 ```
 
-- App : [http://localhost:8080](http://localhost:8080) _(port configurable via `APP_PORT`)_
-- phpMyAdmin : [http://db.localhost:8080](http://db.localhost:8080)
+- App (via Kong) : [http://localhost:8080](http://localhost:8080) _(port configurable via `APP_PORT`)_
+- phpMyAdmin : [http://localhost:8081](http://localhost:8081) _(choisir `auth-mysql` ou `task-mysql`)_
 
-> Le port hôte de l'app est `8080` par défaut pour éviter les conflits si le port 80 est déjà
-> pris (autre Traefik, serveur web…). Pour utiliser le port 80 : `APP_PORT=80 docker compose up`.
+> Le port hôte de l'app est `8080` par défaut (Kong). Pour utiliser le port 80 :
+> `APP_PORT=80 docker compose up`. phpMyAdmin est sur `8081` (`PMA_PORT`).
 
 Les modifications du code backend et frontend sont répercutées automatiquement sans rebuild.
+Au premier démarrage, Kafka met ~15-30 s à être prêt (le producer/consumer se reconnectent
+automatiquement).
 
 ### Arrêter
 
@@ -67,7 +101,7 @@ docker compose down
 
 ## Lancer sans Docker
 
-### Backend
+### Backend (API items)
 
 ```bash
 cd backend
@@ -77,9 +111,21 @@ SQLITE_DB_LOCATION=./todo.db npm run dev
 
 Le backend écoute sur `http://localhost:3000`.
 
-### Frontend
+### Auth (API authentification)
 
 Dans un second terminal :
+
+```bash
+cd auth
+npm install
+SQLITE_DB_LOCATION=./auth.db npm run dev
+```
+
+Le service auth écoute sur `http://localhost:3001`.
+
+### Frontend
+
+Dans un troisième terminal :
 
 ```bash
 cd client
@@ -87,7 +133,10 @@ npm install
 npm run dev
 ```
 
-Le frontend Vite écoute sur `http://localhost:5173` et proxie `/api` vers le backend.
+Le frontend Vite écoute sur `http://localhost:5173`.
+
+> Hors Docker, le routage de proxy unique n'existe pas : préférez `docker compose up --watch`
+> pour avoir `/api/auth`, `/api` et `/` servis sur la même origine `http://localhost:8080`.
 
 ---
 
@@ -182,12 +231,15 @@ Détails et vérification : [`docs/observability.md`](docs/observability.md).
 
 ## Kubernetes
 
-Déploiement via une image bundlée unique, namespace `todo` :
+Déploiement de toute la topologie (Kong + 3 services + 2 MySQL + 2 Redis + Kafka), namespace `todo` :
 
 ```bash
-kubectl apply -k k8s/                 # app + MySQL + ingress + HPA
+kubectl apply -k k8s/                 # gateway + services + bases + caches + kafka + ingress + HPA
 kubectl apply -k k8s/observability/   # Prometheus + Grafana + Loki + Promtail (optionnel)
 ```
+
+L'`Ingress` (`todo.localhost`) forwarde vers **Kong**, qui route en interne `/api/auth`→auth,
+`/api`→backend, `/`→frontend. L'HPA cible le déploiement `backend`.
 
 Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs/kubernetes.md`](docs/kubernetes.md).
 
@@ -197,34 +249,39 @@ Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs
 
 ```
 .
-├── backend/
+├── backend/                        # Image backend (task) — API todo-items
+│   ├── Dockerfile
 │   ├── src/
-│   │   ├── app.js                  # Point d'entrée Express (middlewares, routes)
-│   │   ├── middleware/auth.js      # Vérification JWT depuis cookie httpOnly
-│   │   ├── migrations/             # Scripts SQL numérotés + runner
-│   │   ├── persistence/            # Couche d'accès données (SQLite / MySQL)
-│   │   ├── routes/                 # Routes REST (items + auth)
-│   │   └── services/               # Logique métier (itemService, userService)
-│   │   ├── metrics.js              # Registre Prometheus + middleware
-│   │   └── logger.js               # Logger structuré pino
-│   └── spec/
-│       ├── routes/ (+ routes/auth) # Tests unitaires des routes
-│       ├── middleware/             # Tests unitaires du middleware auth
-│       ├── services/               # Tests unitaires des services
-│       └── integration/            # Tests d'intégration supertest (items, auth, health)
-├── client/
-│   └── src/
-│       ├── api/                    # Modules fetch (todoApi, authApi)
-│       ├── components/             # Composants React
-│       ├── context/AuthContext.jsx # Gestion de la session utilisateur
-│       ├── hooks/useTodoList.js    # Hook état + appels API todo
-│       └── pages/                  # Login, Register, Profile, Privacy
-├── k8s/                            # Manifests Kubernetes (app, MySQL, ingress, HPA)
-│   └── observability/             # Prometheus, Grafana, Loki, Promtail
+│   │   ├── app.js                  # Express : observabilité + routes /api/items
+│   │   ├── middleware/auth.js      # Vérification JWT locale (secret partagé)
+│   │   ├── cache.js                # Cache-aside Redis (no-op si REDIS_HOST absent)
+│   │   ├── bus.js                  # Bus Kafka (no-op si KAFKA_BROKERS absent)
+│   │   ├── consumer.js             # Consumer user.deleted → purge des items
+│   │   ├── migrations/             # 001 todo_items, 003 add user_id + runner
+│   │   ├── persistence/            # Accès données items (SQLite / MySQL)
+│   │   ├── routes/ services/itemService.js  # routes + logique métier items
+│   │   ├── metrics.js / logger.js  # Prometheus (+ cache hits/misses) + logs pino
+│   └── spec/                       # Tests items + middleware + consumer + intégration
+├── auth/                           # Image auth — API authentification
+│   ├── Dockerfile
+│   ├── src/
+│   │   ├── app.js                  # Express : observabilité + routes /api/auth
+│   │   ├── middleware/auth.js cache.js bus.js  # JWT + cache profil + producer event
+│   │   ├── migrations/002_users_table.sql + runner
+│   │   ├── persistence/            # Accès données users (SQLite / MySQL)
+│   │   └── routes/auth/ services/userService.js
+│   └── spec/                       # Tests auth + middleware + intégration
+├── client/                         # Image frontend — SPA React servie par nginx
+│   ├── Dockerfile / nginx.conf
+│   └── src/ api/ components/ context/ hooks/ pages/
+├── gateway/kong.yml                # Config déclarative de l'API Gateway Kong (compose)
+├── k8s/                            # Manifests K8s : kong, frontend, backend, auth,
+│   │                               # auth/task-mysql, auth/task-redis, kafka, ingress, HPA
+│   └── observability/              # Prometheus, Grafana, Loki, Promtail
 ├── observability/                  # Configs stack observabilité (dev local)
 ├── docs/                           # Guides (observability, kubernetes, testing) + adr/
 ├── .github/workflows/ci.yml        # Pipeline CI/CD GitHub Actions
-├── compose.yaml                    # Docker Compose (dev + prod)
+├── compose.yaml                    # Docker Compose (3 services + MySQL + proxy)
 ├── compose.observability.yaml      # Overlay observabilité
 └── .env.example                    # Template de configuration
 ```
@@ -233,11 +290,13 @@ Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs
 
 ## CI/CD
 
-Le pipeline GitHub Actions (`.github/workflows/ci.yml`) comporte 3 jobs exécutés à chaque push/PR :
+Le pipeline GitHub Actions (`.github/workflows/ci.yml`) exécute à chaque push/PR :
 
-1. **test-backend** — `npm run test:coverage` (Jest, unitaires + intégration, gate de couverture)
-2. **test-frontend** — `npm run lint` + `npm run test:coverage` (Vitest + ESLint, gate de couverture)
-3. **build-and-push** — build Docker multi-stage et push vers `ghcr.io` _(déclenché uniquement si les deux jobs de tests passent)_
+1. **test-backend** — `npm run test:coverage` (Jest, items, gate de couverture)
+2. **test-auth** — `npm run test:coverage` (Jest, auth, gate de couverture)
+3. **test-frontend** — `npm run lint` + `npm run test:coverage` (Vitest + ESLint, gate de couverture)
+4. **build-and-push** — matrice qui build et pousse les **3 images** vers `ghcr.io`
+   (`…-frontend`, `…-backend`, `…-auth`) _(uniquement sur `main`, si tous les tests passent)_
 
 > **Action manuelle requise pour activer le push Docker :**
 > `Settings > Actions > Workflow permissions` → cocher **"Read and write permissions"**
@@ -258,3 +317,7 @@ Les décisions d'architecture sont documentées dans [`docs/adr/`](docs/adr/) :
 | [006](docs/adr/006-observability-stack.md) | Stack Prometheus / Grafana / Loki |
 | [007](docs/adr/007-health-readiness-probes.md) | Probes `/health` & `/ready` |
 | [008](docs/adr/008-structured-logging.md) | Logs structurés pino |
+| [009](docs/adr/009-api-gateway-kong.md) | API Gateway Kong (DB-less) |
+| [010](docs/adr/010-cache-redis.md) | Cache-aside Redis par service |
+| [011](docs/adr/011-message-bus-kafka.md) | Bus d'événements Kafka |
+| [012](docs/adr/012-database-per-service.md) | Une base de données par service |

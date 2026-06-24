@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: app
+  name: backend
   namespace: todo
   labels:
-    app: todo-app
+    app: backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: todo-app
+      app: backend
   template:
     metadata:
       labels:
-        app: todo-app
+        app: backend
       annotations:
         # Picked up by the Prometheus pod-scrape config (see k8s/observability).
         prometheus.io/scrape: "true"
@@ -21,10 +21,10 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       containers:
-        - name: app
-          # Built and pushed by .github/workflows/ci.yml (stage "final").
+        - name: backend
+          # Built and pushed by .github/workflows/ci.yml.
           # GitHub owner is "alixanb" (lowercase, must match the image tag).
-          image: ghcr.io/alixanb/getting-started-todo-app:latest
+          image: ghcr.io/alixanb/getting-started-todo-app-backend:latest
           # IfNotPresent : en local, l'image construite avec `docker build`
           # est réutilisée (Docker Desktop partage son démon avec le cluster)
           # au lieu d'être tirée depuis GHCR.
@@ -37,21 +37,19 @@ spec:
                 configMapKeyRef:
                   name: todo-config
                   key: NODE_ENV
+            # Database-per-service: the backend (task) owns task-mysql.
             - name: MYSQL_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: todo-config
-                  key: MYSQL_HOST
+              value: task-mysql
+            # Cache-aside (Redis) and message bus (Kafka). Enabled by presence.
+            - name: REDIS_HOST
+              value: task-redis
+            - name: KAFKA_BROKERS
+              value: kafka:9092
             - name: MYSQL_DB
               valueFrom:
                 configMapKeyRef:
                   name: todo-config
                   key: MYSQL_DB
-            - name: JWT_EXPIRES_IN
-              valueFrom:
-                configMapKeyRef:
-                  name: todo-config
-                  key: JWT_EXPIRES_IN
             - name: LOG_LEVEL
               valueFrom:
                 configMapKeyRef:
@@ -67,6 +65,7 @@ spec:
                 secretKeyRef:
                   name: todo-secret
                   key: MYSQL_PASSWORD
+            # Shared with the auth service so JWTs issued by auth verify here.
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
