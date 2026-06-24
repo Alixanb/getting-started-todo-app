@@ -23,6 +23,19 @@ const httpRequestDuration = new client.Histogram({
     registers: [register],
 });
 
+// Cache-aside (Redis) counters — incremented by src/cache.js.
+const cacheHits = new client.Counter({
+    name: 'cache_hits_total',
+    help: 'Number of cache reads served from Redis',
+    registers: [register],
+});
+
+const cacheMisses = new client.Counter({
+    name: 'cache_misses_total',
+    help: 'Number of cache reads that fell through to the database',
+    registers: [register],
+});
+
 function metricsMiddleware(req, res, next) {
     // Skip the scrape endpoint itself to avoid self-referential noise.
     if (req.path === '/metrics') return next();
@@ -44,4 +57,4 @@ function metricsMiddleware(req, res, next) {
     next();
 }
 
-module.exports = { register, metricsMiddleware };
+module.exports = { register, metricsMiddleware, cacheHits, cacheMisses };

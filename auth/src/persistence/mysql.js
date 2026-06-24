@@ -100,18 +100,6 @@ async function deleteUser(id) {
     await query('DELETE FROM users WHERE id = ?', [id]);
 }
 
-// Cascade cleanup of the user's todo items on account deletion. The auth and
-// backend services share the same database, so the auth service removes the
-// rows tied to the account it deletes. The todo_items table is owned by the
-// backend service; if it doesn't exist yet, there is nothing to clean up.
-async function deleteUserItems(userId) {
-    try {
-        await query('DELETE FROM todo_items WHERE user_id = ?', [userId]);
-    } catch (err) {
-        if (err.code !== 'ER_NO_SUCH_TABLE') throw err;
-    }
-}
-
 module.exports = {
     init,
     teardown,
@@ -122,5 +110,4 @@ module.exports = {
     updateUser,
     updateUserPassword,
     deleteUser,
-    deleteUserItems,
 };

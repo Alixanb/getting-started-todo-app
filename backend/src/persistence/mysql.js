@@ -98,6 +98,12 @@ async function removeItem(id) {
     await query('DELETE FROM todo_items WHERE id = ?', [id]);
 }
 
+// Purge all items of a user — called by the Kafka consumer on `user.deleted`,
+// since the auth service no longer reaches this database directly.
+async function deleteUserItems(userId) {
+    await query('DELETE FROM todo_items WHERE user_id = ?', [userId]);
+}
+
 module.exports = {
     init,
     teardown,
@@ -107,4 +113,5 @@ module.exports = {
     storeItem,
     updateItem,
     removeItem,
+    deleteUserItems,
 };
