@@ -5,8 +5,8 @@ metadata:
   namespace: todo
 data:
   NODE_ENV: "production"
-  # When MYSQL_HOST is set, the backend uses MySQL instead of SQLite.
-  MYSQL_HOST: "mysql"
+  # Database-per-service: MYSQL_HOST is set per deployment (auth-mysql / task-mysql),
+  # not here. Both databases use the same database name.
   MYSQL_DB: "todos"
   JWT_EXPIRES_IN: "7d"
   LOG_LEVEL: "info"

@@ -37,11 +37,14 @@ spec:
                 configMapKeyRef:
                   name: todo-config
                   key: NODE_ENV
+            # Database-per-service: the backend (task) owns task-mysql.
             - name: MYSQL_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: todo-config
-                  key: MYSQL_HOST
+              value: task-mysql
+            # Cache-aside (Redis) and message bus (Kafka). Enabled by presence.
+            - name: REDIS_HOST
+              value: task-redis
+            - name: KAFKA_BROKERS
+              value: kafka:9092
             - name: MYSQL_DB
               valueFrom:
                 configMapKeyRef:

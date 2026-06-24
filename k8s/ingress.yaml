@@ -9,26 +9,13 @@ spec:
     - host: todo.localhost
       http:
         paths:
-          # Most specific first. ingress-nginx matches the longest prefix, so
-          # /api/auth → auth, /api → backend, everything else → frontend.
-          - path: /api/auth
-            pathType: Prefix
-            backend:
-              service:
-                name: auth
-                port:
-                  number: 3001
-          - path: /api
-            pathType: Prefix
-            backend:
-              service:
-                name: backend
-                port:
-                  number: 3000
+          # The edge ingress forwards everything to the Kong API Gateway, which
+          # performs the internal routing (/api/auth → auth, /api → backend,
+          # / → frontend) and applies its plugins.
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: frontend
+                name: kong
                 port:
-                  number: 80
+                  number: 8000
