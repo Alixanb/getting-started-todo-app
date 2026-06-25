@@ -1,0 +1,24 @@
+# Terraform local state, plans and caches — never commit these
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Variable files may contain secrets — commit an example.tfvars only if needed
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# Override files are usually local tweaks
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI config
+.terraformrc
+terraform.rc
+
+# Keep .terraform.lock.hcl versioned (Terraform convention) — not ignored.

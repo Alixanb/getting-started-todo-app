@@ -26,6 +26,13 @@ services:
         paths:
           - /api
         strip_path: false
+      # Expose les sondes santé du backend publiquement (plus spécifique que
+      # la route "/" du frontend, donc prioritaire pour ces chemins exacts).
+      - name: health-route
+        paths:
+          - /health
+          - /ready
+        strip_path: false
 
   - name: frontend
     url: http://client:5173

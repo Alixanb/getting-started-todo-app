@@ -29,9 +29,8 @@ resources:
   - backend-service.yaml
   - auth-deployment.yaml
   - auth-service.yaml
-  # API Gateway (Kong, DB-less) + edge ingress + autoscaler
+  # API Gateway (Kong, DB-less, exposé en LoadBalancer) + autoscaler
   - kong-configmap.yaml
   - kong-deployment.yaml
   - kong-service.yaml
-  - ingress.yaml
   - hpa.yaml

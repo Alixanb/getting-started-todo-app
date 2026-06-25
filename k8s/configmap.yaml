@@ -4,7 +4,10 @@ metadata:
   name: todo-config
   namespace: todo
 data:
-  NODE_ENV: "production"
+  # "development" pour que le cookie d'auth ne soit pas marqué Secure :
+  # le LoadBalancer Kong sert en HTTP simple (pas de TLS), un cookie Secure
+  # ne serait jamais renvoyé par le navigateur.
+  NODE_ENV: "development"
   # Database-per-service: MYSQL_HOST is set per deployment (auth-mysql / task-mysql),
   # not here. Both databases use the same database name.
   MYSQL_DB: "todos"

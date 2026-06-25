@@ -37,15 +37,15 @@ derrière une **API Gateway**, avec une **base par service**, un **cache Redis p
   Actor ──▶ Monitoring (Prometheus / Grafana / Loki)
 ```
 
-| Composant | Image | Rôle | Port |
-|---|---|---|---|
-| **Kong** | `kong:3.7` (DB-less) | API Gateway : routage + CORS + rate-limiting | 8000 |
-| **frontend** | `…-frontend` (nginx) | SPA React/Vite servie en statique | 80 |
-| **backend** (*task*) | `…-backend` (Node) | API todo-items | 3000 |
-| **auth** | `…-auth` (Node) | API authentification | 3001 |
-| **auth-mysql / task-mysql** | `mysql:9.3` | base par service (`users` / `todo_items`) | 3306 |
-| **auth-redis / task-redis** | `redis:7` | cache-aside par service | 6379 |
-| **kafka** | `apache/kafka:3.8` | bus d'événements (KRaft) | 9092 |
+| Composant                   | Image                | Rôle                                         | Port |
+| --------------------------- | -------------------- | -------------------------------------------- | ---- |
+| **Kong**                    | `kong:3.7` (DB-less) | API Gateway : routage + CORS + rate-limiting | 8000 |
+| **frontend**                | `…-frontend` (nginx) | SPA React/Vite servie en statique            | 80   |
+| **backend** (_task_)        | `…-backend` (Node)   | API todo-items                               | 3000 |
+| **auth**                    | `…-auth` (Node)      | API authentification                         | 3001 |
+| **auth-mysql / task-mysql** | `mysql:9.3`          | base par service (`users` / `todo_items`)    | 3306 |
+| **auth-redis / task-redis** | `redis:7`            | cache-aside par service                      | 6379 |
+| **kafka**                   | `apache/kafka:3.8`   | bus d'événements (KRaft)                     | 9092 |
 
 **Routage** (le plus spécifique gagne) : `/api/auth → auth`, `/api → backend`, `/ → frontend`.
 
@@ -64,11 +64,11 @@ ne casse pas les requêtes. En dev, Vite et nodemon ont le hot-reload via `docke
 
 ## Prérequis
 
-| Outil | Version minimale |
-|---|---|
-| Docker Desktop | 4.x |
-| Node.js _(hors Docker seulement)_ | 20.x |
-| npm _(hors Docker seulement)_ | 10.x |
+| Outil                             | Version minimale |
+| --------------------------------- | ---------------- |
+| Docker Desktop                    | 4.x              |
+| Node.js _(hors Docker seulement)_ | 20.x             |
+| npm _(hors Docker seulement)_     | 10.x             |
 
 ---
 
@@ -150,6 +150,7 @@ npm test
 ```
 
 Couvre :
+
 - `spec/services/itemService.spec.js` — validation et logique métier (9 tests)
 - `spec/routes/*.spec.js` — routes Express mockées (14 tests)
 
@@ -172,6 +173,7 @@ npm test
 ```
 
 Couvre :
+
 - `src/api/todoApi.test.js` — module fetch API (8 tests)
 - `src/hooks/useTodoList.test.js` — hook React (5 tests)
 - `src/components/AddNewItemForm.test.jsx` — composant formulaire (5 tests)
@@ -196,19 +198,19 @@ Copier `.env.example` en `.env` et ajuster les valeurs :
 cp .env.example .env
 ```
 
-| Variable | Défaut | Description |
-|---|---|---|
-| `JWT_SECRET` | `dev-secret-…` | **Obligatoire en prod.** Clé de signature JWT. Générer avec `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
-| `JWT_EXPIRES_IN` | `7d` | Durée de vie du token JWT (`1h`, `7d`, `30d`…). |
-| `SQLITE_DB_LOCATION` | `/etc/todos/todo.db` | Chemin du fichier SQLite. Hors Docker, utiliser un chemin accessible, ex. `./todo.db`. |
-| `MYSQL_HOST` | _(non défini)_ | Hôte MySQL. Si défini, l'app bascule sur MySQL au lieu de SQLite. |
-| `MYSQL_USER` | — | Utilisateur MySQL. |
-| `MYSQL_PASSWORD` | — | Mot de passe MySQL. |
-| `MYSQL_DB` | — | Nom de la base MySQL. |
-| `MYSQL_HOST_FILE` | — | Chemin vers un fichier contenant l'hôte MySQL (Docker secrets). |
-| `MYSQL_USER_FILE` | — | Chemin vers un fichier contenant l'utilisateur MySQL (Docker secrets). |
-| `MYSQL_PASSWORD_FILE` | — | Chemin vers un fichier contenant le mot de passe MySQL (Docker secrets). |
-| `MYSQL_DB_FILE` | — | Chemin vers un fichier contenant le nom de la base MySQL (Docker secrets). |
+| Variable              | Défaut               | Description                                                                                                                            |
+| --------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`          | `dev-secret-…`       | **Obligatoire en prod.** Clé de signature JWT. Générer avec `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"` |
+| `JWT_EXPIRES_IN`      | `7d`                 | Durée de vie du token JWT (`1h`, `7d`, `30d`…).                                                                                        |
+| `SQLITE_DB_LOCATION`  | `/etc/todos/todo.db` | Chemin du fichier SQLite. Hors Docker, utiliser un chemin accessible, ex. `./todo.db`.                                                 |
+| `MYSQL_HOST`          | _(non défini)_       | Hôte MySQL. Si défini, l'app bascule sur MySQL au lieu de SQLite.                                                                      |
+| `MYSQL_USER`          | —                    | Utilisateur MySQL.                                                                                                                     |
+| `MYSQL_PASSWORD`      | —                    | Mot de passe MySQL.                                                                                                                    |
+| `MYSQL_DB`            | —                    | Nom de la base MySQL.                                                                                                                  |
+| `MYSQL_HOST_FILE`     | —                    | Chemin vers un fichier contenant l'hôte MySQL (Docker secrets).                                                                        |
+| `MYSQL_USER_FILE`     | —                    | Chemin vers un fichier contenant l'utilisateur MySQL (Docker secrets).                                                                 |
+| `MYSQL_PASSWORD_FILE` | —                    | Chemin vers un fichier contenant le mot de passe MySQL (Docker secrets).                                                               |
+| `MYSQL_DB_FILE`       | —                    | Chemin vers un fichier contenant le nom de la base MySQL (Docker secrets).                                                             |
 
 ---
 
@@ -234,22 +236,58 @@ Détails et vérification : [`docs/observability.md`](docs/observability.md).
 Déploiement de toute la topologie (Kong + 3 services + 2 MySQL + 2 Redis + Kafka), namespace `todo` :
 
 ```bash
-kubectl apply -k k8s/                 # gateway + services + bases + caches + kafka + ingress + HPA
+kubectl apply -k k8s/                 # gateway + services + bases + caches + kafka + HPA
 kubectl apply -k k8s/observability/   # Prometheus + Grafana + Loki + Promtail (optionnel)
 ```
 
-L'`Ingress` (`todo.localhost`) forwarde vers **Kong**, qui route en interne `/api/auth`→auth,
-`/api`→backend, `/`→frontend. L'HPA cible le déploiement `backend`.
+Le service **Kong** est exposé en `LoadBalancer` sur le port `8000` et route en interne
+`/api/auth`→auth, `/api`→backend, `/`→frontend. L'HPA cible le déploiement `backend`.
 
-Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs/kubernetes.md`](docs/kubernetes.md).
+```bash
+kubectl get svc kong -n todo          # récupérer l'EXTERNAL-IP → http://<IP>:8000
+```
+
+> En local (Docker Desktop), l'`EXTERNAL-IP` est `localhost` → [http://localhost:8000](http://localhost:8000).
+
+Prérequis (metrics-server), accès et démo autoscaling : [`docs/kubernetes.md`](docs/kubernetes.md).
+
+### Déploiement Azure (Terraform / AKS)
+
+L'infrastructure cloud est décrite en **Infrastructure as Code** avec Terraform dans
+[`azure/`](azure/) : Resource Group + **Azure Container Registry** (admin activé) + cluster **AKS**.
+
+```bash
+cd azure
+terraform init
+terraform apply                       # crée RG + ACR + AKS (~5 min)
+
+# Récupérer les credentials du cluster
+az aks get-credentials --resource-group $(terraform output -raw rg_name) \
+  --name $(terraform output -raw aks_cluster_name)
+
+# Déployer l'app
+kubectl apply -k ../k8s/
+
+# Récupérer l'IP publique de l'API Gateway Kong (provisionnée par Azure, ~1 min)
+kubectl get svc kong -n todo -w
+# → accéder à http://<EXTERNAL-IP>:8000
+
+terraform destroy                     # tear-down complet en une commande
+```
+
+> Le compte Ynov ne dispose pas du rôle `Owner` sur la souscription Azure, ce qui empêche la
+> création de `roleAssignments`. L'ACR utilise donc son **admin intégré** ; les images applicatives
+> sont tirées directement depuis **GHCR** (publiques) — aucun `imagePullSecret` nécessaire.
+
+Variables ajustables : `node_count`, `vm_size`, `kubernetes_version`, `region`. Le state
+Terraform reste local (non versionné, voir `azure/.gitignore`). Détails :
+[ADR-013](docs/adr/013-iac-terraform-azure.md).
 
 ---
 
 ## Structure du projet
 
-```
-.
-├── backend/                        # Image backend (task) — API todo-items
+`├── backend/                        # Image backend (task) — API todo-items
 │   ├── Dockerfile
 │   ├── src/
 │   │   ├── app.js                  # Express : observabilité + routes /api/items
@@ -275,6 +313,7 @@ Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs
 │   ├── Dockerfile / nginx.conf
 │   └── src/ api/ components/ context/ hooks/ pages/
 ├── gateway/kong.yml                # Config déclarative de l'API Gateway Kong (compose)
+├── azure/                          # Infrastructure as Code Terraform (RG + ACR + AKS)
 ├── k8s/                            # Manifests K8s : kong, frontend, backend, auth,
 │   │                               # auth/task-mysql, auth/task-redis, kafka, ingress, HPA
 │   └── observability/              # Prometheus, Grafana, Loki, Promtail
@@ -283,8 +322,7 @@ Prérequis (ingress-nginx, metrics-server), accès et démo autoscaling : [`docs
 ├── .github/workflows/ci.yml        # Pipeline CI/CD GitHub Actions
 ├── compose.yaml                    # Docker Compose (3 services + MySQL + proxy)
 ├── compose.observability.yaml      # Overlay observabilité
-└── .env.example                    # Template de configuration
-```
+└── .env.example                    # Template de configuration`
 
 ---
 
@@ -307,17 +345,31 @@ Le pipeline GitHub Actions (`.github/workflows/ci.yml`) exécute à chaque push/
 
 Les décisions d'architecture sont documentées dans [`docs/adr/`](docs/adr/) :
 
-| ADR | Décision |
-|---|---|
-| [001](docs/adr/001-service-layer.md) | Couche service backend |
-| [002](docs/adr/002-sqlite-mysql-dual.md) | Double persistance SQLite / MySQL |
-| [003](docs/adr/003-frontend-api-module.md) | Module API frontend séparé |
-| [004](docs/adr/004-jwt-httponly-cookie.md) | JWT dans cookie httpOnly |
-| [005](docs/adr/005-kubernetes-orchestration.md) | Orchestration Kubernetes (image bundlée) |
-| [006](docs/adr/006-observability-stack.md) | Stack Prometheus / Grafana / Loki |
-| [007](docs/adr/007-health-readiness-probes.md) | Probes `/health` & `/ready` |
-| [008](docs/adr/008-structured-logging.md) | Logs structurés pino |
-| [009](docs/adr/009-api-gateway-kong.md) | API Gateway Kong (DB-less) |
-| [010](docs/adr/010-cache-redis.md) | Cache-aside Redis par service |
-| [011](docs/adr/011-message-bus-kafka.md) | Bus d'événements Kafka |
-| [012](docs/adr/012-database-per-service.md) | Une base de données par service |
+| ADR                                             | Décision                                         |
+| ----------------------------------------------- | ------------------------------------------------ |
+| [001](docs/adr/001-service-layer.md)            | Couche service backend                           |
+| [002](docs/adr/002-sqlite-mysql-dual.md)        | Double persistance SQLite / MySQL                |
+| [003](docs/adr/003-frontend-api-module.md)      | Module API frontend séparé                       |
+| [004](docs/adr/004-jwt-httponly-cookie.md)      | JWT dans cookie httpOnly                         |
+| [005](docs/adr/005-kubernetes-orchestration.md) | Orchestration Kubernetes (image bundlée)         |
+| [006](docs/adr/006-observability-stack.md)      | Stack Prometheus / Grafana / Loki                |
+| [007](docs/adr/007-health-readiness-probes.md)  | Probes `/health` & `/ready`                      |
+| [008](docs/adr/008-structured-logging.md)       | Logs structurés pino                             |
+| [009](docs/adr/009-api-gateway-kong.md)         | API Gateway Kong (DB-less)                       |
+| [010](docs/adr/010-cache-redis.md)              | Cache-aside Redis par service                    |
+| [011](docs/adr/011-message-bus-kafka.md)        | Bus d'événements Kafka                           |
+| [012](docs/adr/012-database-per-service.md)     | Une base de données par service                  |
+| [013](docs/adr/013-iac-terraform-azure.md)      | Infrastructure as Code (Terraform) sur Azure AKS |
+
+## Prod links
+
+App (todo) http://4.166.149.241:8000
+Grafana http://9.223.49.196:3000 (admin/admin)
+
+### IP CONG
+
+kubectl get svc kong -n todo
+
+### IP de Grafana
+
+kubectl get svc grafana -n observability

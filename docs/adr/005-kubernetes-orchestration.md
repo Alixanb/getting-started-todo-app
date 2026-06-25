@@ -1,7 +1,13 @@
 # ADR-005 — Orchestration avec Kubernetes (image bundlée unique)
 
-**Status :** Accepté  
+**Status :** Accepté — *partie « packaging » remplacée* (voir note)  
 **Date :** 2026-06-15
+
+> **Note (2026-06-24) :** la décision d'orchestrer avec **Kubernetes** reste valable. En revanche
+> le choix d'une **image bundlée unique** a depuis été **remplacé** par un découpage en **trois
+> images** (frontend nginx / backend / auth) derrière une API Gateway — voir
+> [ADR-009](009-api-gateway-kong.md), [ADR-012](012-database-per-service.md) et le README.
+> Le provisionnement du cluster (Azure AKS) est décrit dans [ADR-013](013-iac-terraform-azure.md).
 
 ---
 
