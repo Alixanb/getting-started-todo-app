@@ -219,6 +219,10 @@ cp .env.example .env
 L'app expose `/health` (liveness), `/ready` (readiness, ping DB) et `/metrics` (Prometheus), et écrit des
 logs JSON structurés. Stack Prometheus + Grafana + Loki/Promtail fournie pour le dev local et pour Kubernetes.
 
+> **Chemins des sondes via la gateway** : `/health` et `/ready` sont à la **racine**, pas sous `/api`.
+> Tester `/api/health` renvoie donc un `404` (attendu) — utiliser `http://localhost:8080/health`.
+> `/metrics` n'est volontairement **pas** exposé par Kong (scrappé en interne par Prometheus).
+
 ```bash
 cp .env.example .env
 docker compose -f compose.yaml -f compose.observability.yaml up --build
